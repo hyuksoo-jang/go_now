@@ -523,6 +523,42 @@ _emotion_hist_lock = threading.Lock()
 _last_record_ts = 0.0   # 마지막 기록 시각
 
 
+# ─────────────────────────────────────────────────────────────
+# 평균 감정 계산 (신호등 구간 선택: 실시간 / 1분 / 5분 / 10분)
+# ─────────────────────────────────────────────────────────────
+# 감정 → 정서가(valence) 매핑: 분노 -1, 일반 0, 행복 +1
+_EMO_VALENCE = {'분노': -1.0, '일반': 0.0, '행복': 1.0}
+
+
+# 구간이 '충분히 찼다'고 볼 최소 커버리지 (0.0~1.0)
+# 예: 0.9 → 5분 선택 시 데이터가 약 4.5분 이상 모여야 평균을 산출(그 전엔 '측정중')
+_WINDOW_MIN_COVERAGE = 0.9
+
+
+def _window_emotion(minutes):
+    """최근 N분 감정 이력의 '평균 감정'을 카테고리로 반환.
+    - 구간에 샘플이 전혀 없거나, 모인 데이터가 구간의 _WINDOW_MIN_COVERAGE
+      비율만큼 채워지지 않았으면 None(→ 호출부에서 '측정중' 처리)을 반환한다.
+    - 충분히 찼으면 valence(분노 -1 / 일반 0 / 행복 +1) 평균을 ±0.33 임계로 분류한다."""
+    now    = time.time()
+    cutoff = now - minutes * 60
+    with _emotion_hist_lock:
+        samples = [(ts, em) for ts, em in _EMOTION_HISTORY if ts >= cutoff]
+    if not samples:
+        return None
+    # 가장 오래된 샘플이 구간의 일정 비율 이상을 커버해야 '측정 완료'로 간주
+    span = now - samples[0][0]
+    if span < minutes * 60 * _WINDOW_MIN_COVERAGE:
+        return None
+    vals = [_EMO_VALENCE.get(em, 0.0) for _, em in samples]
+    avg = sum(vals) / len(vals)
+    if avg <= -0.33:
+        return '분노'
+    if avg >= 0.33:
+        return '행복'
+    return '일반'
+
+
 def _load_json(path):
     with _data_lock:
         if os.path.exists(path):
@@ -947,8 +983,26 @@ def api_emotion_history():
 
 @app.route('/api/status')
 def api_status():
+    """현재 방문 가능 신호 반환.
+
+    쿼리 파라미터 window:
+      'realtime'(기본) → 실시간 현재 감정(_current_emotion)
+      '1' / '5' / '10' → 최근 N분 평균 감정(_window_emotion)
+    평균 감정이 분노/행복이면 곧바로 빨강/초록, 그 외(일반)는
+    캘린더상 1시간 내 임박 일정이 있으면 주황으로 처리한다.
+    """
     global _current_emotion
-    em = _current_emotion
+
+    window = request.args.get('window', 'realtime')
+    if window in ('1', '5', '10'):
+        em = _window_emotion(int(window))
+        if em is None:
+            # 해당 구간에 누적된 감정 데이터가 아직 없음 → 측정중
+            return jsonify({'emotion': None, 'signal': 'measuring', 'window': window})
+    else:
+        window = 'realtime'
+        em = _current_emotion
+
     if em == '분노':
         signal = 'red'
     elif em == '행복':
@@ -969,7 +1023,7 @@ def api_status():
                     break
             except Exception:
                 pass
-    return jsonify({'emotion': em, 'signal': signal})
+    return jsonify({'emotion': em, 'signal': signal, 'window': window})
 
 
 @app.route('/api/calendar', methods=['GET', 'POST'])
@@ -1125,18 +1179,18 @@ def camera_loop(cam_idx: int):
             by2 = min(fH, max(ys_px) + 10)
             bw  = bx2 - bx1
 
-            # # 정면 감지
-            # if not is_frontal_face(face_lms):
-            #     cv2.rectangle(frame, (bx1, by1), (bx2, by2), (120, 120, 120), 2)
-            #     ko_overlays.append(
-            #         ('얼굴이 정면을 바라보고 있지 않습니다.', (bx1, by2 + 14), (120, 120, 120), 20))
-            #     frame = apply_text_overlays(frame, ko_overlays)
-            #     ok, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            #     if ok:
-            #         with _frame_lock:
-            #             _latest_jpeg = buf.tobytes()
-            #     prev_t = time.time(); fps_buf.append(30.0)
-            #     continue
+            # 정면 감지
+            if not is_frontal_face(face_lms):
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), (120, 120, 120), 2)
+                ko_overlays.append(
+                    ('얼굴이 정면을 바라보고 있지 않습니다.', (bx1, by2 + 14), (120, 120, 120), 20))
+                frame = apply_text_overlays(frame, ko_overlays)
+                ok, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if ok:
+                    with _frame_lock:
+                        _latest_jpeg = buf.tobytes()
+                prev_t = time.time(); fps_buf.append(30.0)
+                continue
 
             # ── Tier-1: Face Landmarker blendshapes ──────────────
             if _USE_BLENDSHAPES:
@@ -1271,4 +1325,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
