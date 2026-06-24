@@ -48,8 +48,8 @@ LABEL_PATH       = "model/yamnet_class_map.csv"
 SAMPLE_RATE      = 16000
 CHUNK_MS         = 250
 
-THRESHOLD        = 0.15
-COOLDOWN_SEC     = 2.0
+THRESHOLD        = 0.3
+COOLDOWN_SEC     = 5.0
 
 SIGH_KEYWORDS    = ["sigh", "breathing", "exhale"]
 
