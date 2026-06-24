@@ -48,7 +48,7 @@ LABEL_PATH       = "model/yamnet_class_map.csv"
 SAMPLE_RATE      = 16000
 CHUNK_MS         = 250
 
-THRESHOLD        = 0.3
+THRESHOLD        = 0.4
 COOLDOWN_SEC     = 5.0
 
 SIGH_KEYWORDS    = ["sigh", "breathing", "exhale"]
@@ -57,7 +57,7 @@ DEBUG            = False
 SHOW_DETECT_DATA = True
 
 # ── 감지 시 저장 설정 ─────────────────────────────────────────
-SAVE_AUDIO       = True          # False 로 바꾸면 저장 안 함
+SAVE_AUDIO       = False          # False 로 바꾸면 저장 안 함
 SAVE_DIR         = "detected"    # 저장 폴더 (없으면 자동 생성)
 
 
@@ -302,9 +302,9 @@ def main():
                           f"window={window_len/SAMPLE_RATE*1000:.0f}ms")
 
                 # ── 감지된 오디오 저장 ──────────────────────
-                # if SAVE_AUDIO:
-                #     saved_path = save_detected_audio(buffer.copy(), prob)
-                #     print(f"  💾 저장: {saved_path}")
+                if SAVE_AUDIO:
+                    saved_path = save_detected_audio(buffer.copy(), prob)
+                    print(f"  💾 저장: {saved_path}")
 
             elif DEBUG:
                 print(f"[{ts}]  False  ({cls_name}: {prob:.3f})")
