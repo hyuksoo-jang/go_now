@@ -302,9 +302,9 @@ def main():
                           f"window={window_len/SAMPLE_RATE*1000:.0f}ms")
 
                 # ── 감지된 오디오 저장 ──────────────────────
-                if SAVE_AUDIO:
-                    saved_path = save_detected_audio(buffer.copy(), prob)
-                    print(f"  💾 저장: {saved_path}")
+                # if SAVE_AUDIO:
+                #     saved_path = save_detected_audio(buffer.copy(), prob)
+                #     print(f"  💾 저장: {saved_path}")
 
             elif DEBUG:
                 print(f"[{ts}]  False  ({cls_name}: {prob:.3f})")
