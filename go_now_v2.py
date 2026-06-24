@@ -136,6 +136,7 @@ _BS_BUFS      = {}   # {blendshape_name: deque}
 _BS_BASELINE  = {}   # 개인화 베이스라인
 _BS_CALIB_MIN = 35
 _BS_LOCK      = __import__('threading').Lock()
+_bs_in_anger  = False   # 분노 중 Tier-1 베이스라인 동결 플래그
 
 _ALL_TRACKED_BS = [
     # 행복 신호
@@ -153,14 +154,15 @@ _ALL_TRACKED_BS = [
 
 def _bs_update_baseline(bs_dict):
     with _BS_LOCK:
-        for k in _ALL_TRACKED_BS:
-            v = bs_dict.get(k, 0.0)
-            if k not in _BS_BUFS:
-                _BS_BUFS[k] = deque(maxlen=180)
-            _BS_BUFS[k].append(v)
-        if len(_BS_BUFS.get('mouthSmileLeft', [])) >= _BS_CALIB_MIN:
-            for k, buf in list(_BS_BUFS.items()):
-                _BS_BASELINE[k] = float(np.percentile(buf, 25))
+        if not _bs_in_anger:   # 분노 상태일 때 베이스라인 갱신 중단 (분노→중립 소멸 방지)
+            for k in _ALL_TRACKED_BS:
+                v = bs_dict.get(k, 0.0)
+                if k not in _BS_BUFS:
+                    _BS_BUFS[k] = deque(maxlen=180)
+                _BS_BUFS[k].append(v)
+            if len(_BS_BUFS.get('mouthSmileLeft', [])) >= _BS_CALIB_MIN:
+                for k, buf in list(_BS_BUFS.items()):
+                    _BS_BASELINE[k] = float(np.percentile(buf, 25))
 
 
 def analyze_blendshapes(bs_dict):
@@ -211,11 +213,16 @@ def analyze_blendshapes(bs_dict):
         'happy': round(happy_score, 3), 'angry': round(angry_score, 3),
     }
 
-    if happy_score >= 0.07 and smile >= 0.03 and happy_score >= angry_score + 0.03:
+    global _bs_in_anger
+    # 행복: smile 임계 강화(입술 움직임 단독 검출 방지)
+    if happy_score >= 0.14 and smile >= 0.07 and happy_score >= angry_score + 0.05:
+        _bs_in_anger = False
         return '행복', float(np.clip(0.55 + happy_score * 0.44, 0, 0.99)), True, dbg
     elif angry_score >= 0.04 and brow_down > 0.006:
+        _bs_in_anger = True
         return '분노', float(np.clip(0.55 + angry_score * 0.44, 0, 0.99)), True, dbg
     else:
+        _bs_in_anger = False
         return '일반', 0.50, True, dbg
 
 
@@ -245,6 +252,7 @@ _AU_BASELINE  = {}   # {feature_name: float}
 _AU_CALIB_MIN = 45
 _AU_BUF_SIZE  = 150  # ~5초 @ 30fps
 _AU_LOCK      = __import__('threading').Lock()
+_au_in_anger  = False   # 분노 중 Tier-2 베이스라인 동결 플래그
 
 
 def _compute_au_features(face_lms):
@@ -312,17 +320,18 @@ def _compute_au_features(face_lms):
 def _au_update_baseline(feat):
     """각 AU 특징의 적응형 베이스라인 갱신."""
     with _AU_LOCK:
-        for k, v in feat.items():
-            if k not in _AU_BUFS:
-                _AU_BUFS[k] = deque(maxlen=_AU_BUF_SIZE)
-            _AU_BUFS[k].append(v)
-        if len(_AU_BUFS.get('au12', [])) >= _AU_CALIB_MIN:
-            for k, buf in list(_AU_BUFS.items()):
-                # 입꼬리/입폭 계열 → 낮은 쪽이 중립(35th)
-                # 눈썹/눈 거리 계열 → 높은 쪽이 중립(80th)
-                pct = 35 if k in ('au12', 'au12_L', 'au12_R',
-                                   'mouth_w', 'au25', 'nostril_w') else 80
-                _AU_BASELINE[k] = float(np.percentile(buf, pct))
+        if not _au_in_anger:   # 분노 상태일 때 베이스라인 갱신 중단
+            for k, v in feat.items():
+                if k not in _AU_BUFS:
+                    _AU_BUFS[k] = deque(maxlen=_AU_BUF_SIZE)
+                _AU_BUFS[k].append(v)
+            if len(_AU_BUFS.get('au12', [])) >= _AU_CALIB_MIN:
+                for k, buf in list(_AU_BUFS.items()):
+                    # 입꼬리/입폭 계열 → 낮은 쪽이 중립(35th)
+                    # 눈썹/눈 거리 계열 → 높은 쪽이 중립(80th)
+                    pct = 35 if k in ('au12', 'au12_L', 'au12_R',
+                                       'mouth_w', 'au25', 'nostril_w') else 80
+                    _AU_BASELINE[k] = float(np.percentile(buf, pct))
 
 
 def analyze_emotion_geometric(face_lms):
@@ -356,7 +365,8 @@ def analyze_emotion_geometric(face_lms):
 
     # ── 행복 신호 ─────────────────────────────────────────────
     au12_gate   = float(min(1.0, au12_up * 8.0))
-    happy_raw   = au12_up * 0.70 + mouth_wide * 0.20 + (cheek_up * au12_gate) * 0.10
+    # mouth_wide는 말할 때도 증가하므로 au12_gate로 게이팅 (입꼬리 동반 시만 기여)
+    happy_raw   = au12_up * 0.80 + (mouth_wide * au12_gate) * 0.10 + (cheek_up * au12_gate) * 0.10
     frown_veto  = float(min(1.0, max(ibrow_close, brow_press) * 8.0))
     happy_score = happy_raw * (1.0 - frown_veto)
 
@@ -383,11 +393,16 @@ def analyze_emotion_geometric(face_lms):
         'angry':       round(angry_score, 3),
     }
 
-    if happy_score >= 0.08 and au12_up >= 0.05 and happy_score >= angry_score + 0.03:
+    global _au_in_anger
+    # 행복: au12_up 임계 강화(입술 단독 움직임 방지)
+    if happy_score >= 0.14 and au12_up >= 0.09 and happy_score >= angry_score + 0.05:
+        _au_in_anger = False
         return '행복', float(np.clip(0.55 + happy_score * 0.44, 0, 0.99)), True, dbg
     elif angry_score >= 0.04 and ibrow_close > 0.006:
+        _au_in_anger = True
         return '분노', float(np.clip(0.55 + angry_score * 0.44, 0, 0.99)), True, dbg
     else:
+        _au_in_anger = False
         return '일반', 0.50, True, dbg
 
 
@@ -526,35 +541,37 @@ _last_record_ts = 0.0   # 마지막 기록 시각
 # ─────────────────────────────────────────────────────────────
 # 평균 감정 계산 (신호등 구간 선택: 실시간 / 1분 / 5분 / 10분)
 # ─────────────────────────────────────────────────────────────
-# 감정 → 정서가(valence) 매핑: 분노 -1, 일반 0, 행복 +1
-_EMO_VALENCE = {'분노': -1.0, '일반': 0.0, '행복': 1.0}
-
-
-# 구간이 '충분히 찼다'고 볼 최소 커버리지 (0.0~1.0)
-# 예: 0.9 → 5분 선택 시 데이터가 약 4.5분 이상 모여야 평균을 산출(그 전엔 '측정중')
-_WINDOW_MIN_COVERAGE = 0.9
-
-
 def _window_emotion(minutes):
-    """최근 N분 감정 이력의 '평균 감정'을 카테고리로 반환.
-    - 구간에 샘플이 전혀 없거나, 모인 데이터가 구간의 _WINDOW_MIN_COVERAGE
-      비율만큼 채워지지 않았으면 None(→ 호출부에서 '측정중' 처리)을 반환한다.
-    - 충분히 찼으면 valence(분노 -1 / 일반 0 / 행복 +1) 평균을 ±0.33 임계로 분류한다."""
-    now    = time.time()
-    cutoff = now - minutes * 60
+    """최근 N분 감정 이력의 평균 감정을 카테고리로 반환.
+    - 실제 측정 시작 시각 기준: 첫 샘플이 기록된 이후 경과 시간이 목표 구간에
+      미달이면 None(→ '측정중') 반환.
+    - 경과 시간이 목표 구간 이상이면 FIFO 버퍼 데이터를 그대로 사용한다.
+    - 분노 비율이 40 % 이상이면 '분노'로 판단한다.
+    - 그 외에는 행복 비율이 50 % 이상이면 '행복', 아니면 '일반'으로 판단한다."""
+    now        = time.time()
+    cutoff     = now - minutes * 60
+    target_sec = minutes * 60   # 목표 구간(초)
+
     with _emotion_hist_lock:
-        samples = [(ts, em) for ts, em in _EMOTION_HISTORY if ts >= cutoff]
-    if not samples:
+        window_items = [(ts, em) for ts, em in _EMOTION_HISTORY if ts >= cutoff]
+        # 전체 이력의 첫 타임스탬프로 실제 가동 시간을 계산
+        first_ts = _EMOTION_HISTORY[0][0] if _EMOTION_HISTORY else None
+
+    if not window_items or first_ts is None:
         return None
-    # 가장 오래된 샘플이 구간의 일정 비율 이상을 커버해야 '측정 완료'로 간주
-    span = now - samples[0][0]
-    if span < minutes * 60 * _WINDOW_MIN_COVERAGE:
+
+    # 실제 경과 시간이 목표 구간 미만이면 아직 측정 중
+    elapsed = now - first_ts
+    if elapsed < target_sec:
         return None
-    vals = [_EMO_VALENCE.get(em, 0.0) for _, em in samples]
-    avg = sum(vals) / len(vals)
-    if avg <= -0.33:
+
+    samples = [em for _, em in window_items]
+    total       = len(samples)
+    anger_ratio = samples.count('분노') / total
+    if anger_ratio >= 0.30:
         return '분노'
-    if avg >= 0.33:
+    happy_ratio = samples.count('행복') / total
+    if happy_ratio >= 0.50:
         return '행복'
     return '일반'
 
@@ -951,10 +968,13 @@ def _mjpeg_generator():
 @app.route('/recalibrate', methods=['POST'])
 def recalibrate():
     """모든 베이스라인 버퍼 초기화 (Tier-1 + Tier-2 동시)."""
+    global _bs_in_anger, _au_in_anger
     with _BS_LOCK:
         _BS_BUFS.clear(); _BS_BASELINE.clear()
     with _AU_LOCK:
         _AU_BUFS.clear(); _AU_BASELINE.clear()
+    _bs_in_anger = False
+    _au_in_anger = False
     print('[INFO] 캘리브레이션 초기화')
     return {'message': '무표정으로 1~2초 유지하세요'}
 
@@ -1233,11 +1253,15 @@ def camera_loop(cam_idx: int):
                 prev_t = time.time(); fps_buf.append(30.0)
                 continue
 
-            # 시간축 스무딩 (투표)
+            # 시간축 스무딩 (투표) — 분노 히스테리시스: 25 % 이상이면 분노 유지
             em_hist.append(raw_em)
             conf_hist.append(raw_cf)
             cnt = Counter(em_hist)
-            em  = cnt.most_common(1)[0][0]
+            recent = list(em_hist)
+            if recent.count('분노') >= len(recent) * 0.25:
+                em = '분노'
+            else:
+                em = cnt.most_common(1)[0][0]
             cf  = cnt[em] / len(em_hist) * 0.5 + float(np.mean(conf_hist)) * 0.5
             _current_emotion = em
 
