@@ -32,6 +32,14 @@ except ImportError:
     _RADAR_AVAILABLE = False
     print("[WARNING] radar_signal_processor 모듈을 찾을 수 없습니다.")
 
+# Outlook 동기화 모듈
+try:
+    from outlook_sync import sync_now as _outlook_sync_now, get_sync_status as _outlook_get_status, start_auto_sync as _outlook_start_auto_sync
+    _OUTLOOK_AVAILABLE = True
+except ImportError:
+    _OUTLOOK_AVAILABLE = False
+    print("[WARNING] outlook_sync 모듈을 찾을 수 없습니다.")
+
 # ─────────────────────────────────────────────────────────────
 # Tier-1: MediaPipe Face Landmarker (Tasks API + 52 blendshapes)
 # ─────────────────────────────────────────────────────────────
@@ -754,6 +762,34 @@ def api_speech_recalib_flag():
     return jsonify({'requested': requested})
 
 
+@app.route('/api/outlook/sync', methods=['POST'])
+def api_outlook_sync():
+    """Outlook 수동 동기화 트리거."""
+    if not _OUTLOOK_AVAILABLE:
+        return jsonify({'ok': False, 'message': 'outlook_sync 모듈이 없습니다.'}), 503
+    # 별도 스레드에서 실행 (타임아웃 방지)
+    import threading
+    result = {}
+    def _run():
+        ok, msg = _outlook_sync_now()
+        result['ok'] = ok
+        result['message'] = msg
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=30)
+    if not result:
+        return jsonify({'ok': False, 'message': '동기화 시간 초과 (30초). 백그라운드에서 계속 실행 중.'}), 202
+    return jsonify(result), (200 if result.get('ok') else 500)
+
+
+@app.route('/api/outlook/sync-status')
+def api_outlook_sync_status():
+    """최근 Outlook 동기화 상태 조회."""
+    if not _OUTLOOK_AVAILABLE:
+        return jsonify({'ok': None, 'message': 'outlook_sync 모듈이 없습니다.', 'ts': 0, 'count': 0})
+    return jsonify(_outlook_get_status())
+
+
 @app.route('/api/radar/status')
 def api_radar_status():
     if not _RADAR_AVAILABLE:
@@ -890,6 +926,9 @@ def camera_loop(cam_idx: int):
             print("[ERROR] 프레임 읽기 실패")
             break
 
+        global _camera_ok
+        _camera_ok = True
+        
         frame = cv2.flip(frame, 1)
         fH, fW = frame.shape[:2]
 
@@ -1051,6 +1090,10 @@ def main():
 
     t = threading.Thread(target=camera_loop, args=(cam_idx,), daemon=True)
     t.start()
+
+    # Outlook 자동 동기화 (10분 간격)
+    if _OUTLOOK_AVAILABLE:
+        _outlook_start_auto_sync(interval_minutes=10)
 
     import socket
     try:

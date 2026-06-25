@@ -134,8 +134,8 @@ header h1 .dot{width:8px;height:8px;border-radius:50%;background:var(--state);bo
 .pn-cal{flex:1; min-height:0}
 .cal-nav{display:flex; align-items:center; gap:4px}
 .cal-nav-lbl{font-size:.8rem; font-weight:600; min-width:88px; text-align:center}
-.cal-scroll{flex:1; overflow-y:auto; min-height:0; display:flex; flex-direction:column}
-.cal-grid{display:grid; grid-template-columns:repeat(7,1fr); grid-auto-rows:1fr; gap:2px; flex:1}
+.cal-scroll{flex:1; overflow:hidden; min-height:0;}
+.cal-grid{height:100%; display:grid; grid-template-columns:repeat(7,1fr); grid-auto-rows:1fr; gap:2px;}
 .cal-dow{text-align:center; font-size:.66rem; padding:2px 0; font-weight:600; color:var(--tx2)}
 .cal-dow.sun{color:#ff6b6b} .cal-dow.sat{color:#4d9eff}
 .cal-cell{min-height:46px; padding:3px 4px; border:1px solid var(--line2); border-radius:5px; background:var(--bg); cursor:pointer; transition:background .12s; overflow:hidden}
@@ -454,12 +454,16 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     <div class="pn pn-cal">
       <div class="pt">
         <span>&#128197; 팀장님 캘린더</span>
-        <div class="cal-nav">
-          <button class="btn bc" id="calPrev" style="padding:5px 14px;font-size:1rem">&#8249;</button>
-          <span class="cal-nav-lbl" id="calLabel"></span>
-          <button class="btn bc" id="calNext" style="padding:5px 14px;font-size:1rem">&#8250;</button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button id="outlookSyncBtn" class="btn bc" style="font-size:.72rem;padding:4px 11px;white-space:nowrap">&#128260; 캘린더 수동 SYNC</button>
+          <div class="cal-nav">
+            <button class="btn bc" id="calPrev" style="padding:5px 14px;font-size:1rem">&#8249;</button>
+            <span class="cal-nav-lbl" id="calLabel"></span>
+            <button class="btn bc" id="calNext" style="padding:5px 14px;font-size:1rem">&#8250;</button>
+          </div>
         </div>
       </div>
+      <div id="outlook-sync-bar" style="display:none;padding:5px 10px;border-radius:7px;font-size:.74rem;flex-shrink:0;margin-bottom:4px"></div>
       <div class="cal-scroll"><div class="cal-grid" id="cal-grid"></div></div>
     </div>
   </div>
@@ -672,7 +676,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
       V.acts=[{cls:'now',k:'지금',v:urgent.length?urgent[0].title:(todayAps.length?'가벼운 1건만':'없음')},
               {cls:'later',k:'잠시 뒤',v:'무거운 건 보류'}];
     }else if(s==='orange'){
-      V.lvl='잠깐, 일정 임박'; V.mascot='busy';
+      V.lvl='팀장님 일정 임박'; V.mascot='busy';
       V.why=nextEv?(nextEv.time+' '+nextEv.title+' 전이에요. 짧게 끝낼 것만.'):'곧 일정이 있어요. 짧게 끝낼 것만.';
       V.acts=[{cls:'now',k:'지금 · 짧게',v:todayAps.length?(todayAps[0].title):'가벼운 건'},
               {cls:'later',k:'일정 후',v:'무거운 건'}];
@@ -1063,6 +1067,36 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
   document.getElementById('sig-window').addEventListener('change',function(){ if(usingDemo){seedDemo();}else{pollStatus();} });
   loadGraphData(); setInterval(loadGraphData,3000);
   loadCalendar(); loadApprovals();
+
+  /* ───────── Outlook 동기화 ───────── */
+  function showSyncBar(ok, msg, ts){
+    var bar=document.getElementById('outlook-sync-bar');
+    if(!bar)return;
+    var timeStr='';
+    if(ts){var d=new Date(ts*1000);timeStr=' (마지막: '+pad2(d.getHours())+':'+pad2(d.getMinutes())+')';}    
+    bar.textContent=(ok===true?'✅ ':ok===false?'❌ ':'⏳ ')+msg+timeStr;
+    bar.style.display='block';
+    bar.style.background=ok===true?'rgba(52,199,89,.13)':ok===false?'rgba(255,59,48,.13)':'rgba(139,148,158,.12)';
+    bar.style.color=ok===true?'#34c759':ok===false?'#ff3b30':'#8b949e';
+  }
+  function pollOutlookStatus(){
+    fetch('/api/outlook/sync-status').then(function(r){return r.json();}).then(function(d){
+      if(d.ts)showSyncBar(d.ok,d.message,d.ts);
+    }).catch(function(){});
+  }
+  var _outlookBtn=document.getElementById('outlookSyncBtn');
+  if(_outlookBtn) _outlookBtn.addEventListener('click',function(){
+    var btn=this;
+    btn.disabled=true; btn.textContent='⏳ 동기화 중...';
+    showSyncBar(null,'동기화 중...',0);
+    fetch('/api/outlook/sync',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+      showSyncBar(d.ok,d.message,Date.now()/1000);
+      loadCalendar();
+    }).catch(function(e){showSyncBar(false,'연결 실패: '+e,Date.now()/1000);
+    }).finally(function(){btn.disabled=false;btn.textContent='\u{1F504} 캘린더 수동 SYNC';});
+  });
+  pollOutlookStatus();
+  setInterval(pollOutlookStatus, 60000);  // 1분마다 상태 갱신
   /* ───────── 상세 원인 분석 탭 ───────── */
   function analyzeWindow(k,rd,th){
     var steps=[], fired=0;
