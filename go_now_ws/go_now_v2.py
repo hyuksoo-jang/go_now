@@ -814,27 +814,30 @@ def api_approvals_item(aid):
 
 
 # ─────────────────────────────────────────────────────────────
-# 카메라 처리 루프
+# 카메라 처리 루프 (별도 스레드)
 # ─────────────────────────────────────────────────────────────
 def camera_loop(cam_idx: int):
-    global _latest_jpeg, _current_emotion, _last_record_ts, _camera_ok
+    global _latest_jpeg, _current_emotion, _last_record_ts
 
     try:
         cap = open_camera(cam_idx)
     except RuntimeError as e:
         print(f"[ERROR] {e}")
+        print("  • 카메라 연결 상태 확인")
+        print("  • python3 go_now_v2.py 1  (다른 인덱스 시도)")
+        print("  • v4l2-ctl --list-devices  (장치 목록 확인)")
         return
 
-    _camera_ok = True
     cap.set(cv2.CAP_PROP_FRAME_WIDTH,  640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 30)
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(f"[INFO] 해상도: {W}×{H}")
-    mode_tag = "Tier-1+Tier-2" if _USE_BLENDSHAPES else "Tier-2(AU)"
+    mode_tag = "Tier-1(Blendshape)+Tier-2(AU)" if _USE_BLENDSHAPES else "Tier-2(AU 기하학적)"
     print(f"[INFO] 감정 분석 모드: {mode_tag}")
 
+    # FaceMesh (Tier-2 + 공통 바운딩박스/정면감지)
     face_mesh = mp.solutions.face_mesh.FaceMesh(
         max_num_faces=1,
         refine_landmarks=True,
@@ -854,6 +857,7 @@ def camera_loop(cam_idx: int):
     _last_t1_res = ('일반', 0.5, False, {})
 
     print("\n[INFO] 감정 인식 시작!")
+    print("─" * 40)
 
     while True:
         ret, frame = cap.read()
@@ -864,6 +868,7 @@ def camera_loop(cam_idx: int):
         frame = cv2.flip(frame, 1)
         fH, fW = frame.shape[:2]
 
+        # FaceMesh 처리 (N 프레임마다 실행)
         _frame_skip += 1
         if _frame_skip >= _SKIP_EVERY:
             _frame_skip = 0
@@ -881,6 +886,7 @@ def camera_loop(cam_idx: int):
         else:
             face_lms = _last_mesh.multi_face_landmarks[0]
 
+            # 바운딩박스 계산
             xs_px = [int(l.x * fW) for l in face_lms.landmark]
             ys_px = [int(l.y * fH) for l in face_lms.landmark]
             bx1 = max(0,  min(xs_px) - 15)
@@ -889,6 +895,7 @@ def camera_loop(cam_idx: int):
             by2 = min(fH, max(ys_px) + 10)
             bw  = bx2 - bx1
 
+            # 정면 감지
             if not is_frontal_face(face_lms):
                 cv2.rectangle(frame, (bx1, by1), (bx2, by2), (120, 120, 120), 2)
                 ko_overlays.append(
@@ -901,6 +908,7 @@ def camera_loop(cam_idx: int):
                 prev_t = time.time(); fps_buf.append(30.0)
                 continue
 
+            # ── Tier-1: Face Landmarker blendshapes ──────────────
             if _USE_BLENDSHAPES:
                 _tier1_skip += 1
                 if _tier1_skip >= _T1_EVERY:
@@ -922,10 +930,12 @@ def camera_loop(cam_idx: int):
                 calib_pct = _last_t1_res[3].get('calib_pct',
                             t2_res[3].get('calib_pct', 0))
             else:
+                # Tier-2만 사용
                 t2_res = analyze_emotion_geometric(face_lms)
                 raw_em, raw_cf, calibrated = t2_res[0], t2_res[1], t2_res[2]
                 calib_pct = t2_res[3].get('calib_pct', 0)
 
+            # 캘리브레이션 중 표시
             if not calibrated:
                 cv2.rectangle(frame, (bx1, by1), (bx2, by2), (180, 180, 0), 2)
                 draw_bar(frame, (0, 200, 255), calib_pct, bx1, by2 + 5, bw)
@@ -939,27 +949,26 @@ def camera_loop(cam_idx: int):
                 prev_t = time.time(); fps_buf.append(30.0)
                 continue
 
+            # 시간축 스무딩 (투표) — 분노 히스테리시스: 다수결보다 분노 비율이 높을 때만 유지
             em_hist.append(raw_em)
             conf_hist.append(raw_cf)
             cnt = Counter(em_hist)
             recent = list(em_hist)
-            if recent.count('분노') >= len(recent) * 0.25:
+            top_em = cnt.most_common(1)[0][0]
+            anger_ratio = recent.count('분노') / len(recent)
+            # 분노가 다수결 감정이거나, 다수결과 동률에 가깝고(50% 이상) 실제 지배적일 때만 분노 유지
+            if anger_ratio >= 0.50 and anger_ratio >= cnt.get(top_em, 0) / len(recent) * 0.85:
                 em = '분노'
             else:
-                em = cnt.most_common(1)[0][0]
+                em = top_em
             cf  = cnt[em] / len(em_hist) * 0.5 + float(np.mean(conf_hist)) * 0.5
             _current_emotion = em
 
+            # 1초마다 감정 이력 기록
             now_ts = time.time()
             if now_ts - _last_record_ts >= 1.0:
                 with _emotion_hist_lock:
                     _EMOTION_HISTORY.append((now_ts, em))
-                if _RADAR_AVAILABLE:
-                    try:
-                        radar = get_processor()
-                        radar.add_expression(em, now_ts)
-                    except Exception:
-                        pass
                 _last_record_ts = now_ts
 
             col = EMOTION_COLOR[em]
