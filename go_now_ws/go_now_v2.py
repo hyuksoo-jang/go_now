@@ -120,11 +120,12 @@ DETECT_CONF      = 0.45
 # ═════════════════════════════════════════════════════════════
 # ■ Tier-1: 52 Blendshape 기반 감정 분석
 # ═════════════════════════════════════════════════════════════
-_BS_BUFS      = {}
-_BS_BASELINE  = {}
-_BS_CALIB_MIN = 35
-_BS_LOCK      = threading.Lock()
-_bs_in_anger  = False
+_BS_BUFS             = {}
+_BS_BASELINE         = {}
+_BS_CALIB_MIN        = 35
+_BS_LOCK             = threading.Lock()
+_bs_in_anger         = False
+_BS_BASELINE_LOCKED  = False  # 버퍼 가득 차면 베이스라인 고정
 
 _ALL_TRACKED_BS = [
     'mouthSmileLeft', 'mouthSmileRight',
@@ -139,16 +140,22 @@ _ALL_TRACKED_BS = [
 
 
 def _bs_update_baseline(bs_dict):
+    global _BS_BASELINE_LOCKED
     with _BS_LOCK:
+        if _BS_BASELINE_LOCKED:
+            return
         if not _bs_in_anger:
             for k in _ALL_TRACKED_BS:
                 v = bs_dict.get(k, 0.0)
                 if k not in _BS_BUFS:
                     _BS_BUFS[k] = deque(maxlen=180)
                 _BS_BUFS[k].append(v)
-            if len(_BS_BUFS.get('mouthSmileLeft', [])) >= _BS_CALIB_MIN:
+            n = len(_BS_BUFS.get('mouthSmileLeft', []))
+            if n >= _BS_CALIB_MIN:
                 for k, buf in list(_BS_BUFS.items()):
                     _BS_BASELINE[k] = float(np.percentile(buf, 25))
+            if n >= 180:  # 버퍼 가득 참 → 베이스라인 고정
+                _BS_BASELINE_LOCKED = True
 
 
 def analyze_blendshapes(bs_dict):
@@ -190,10 +197,15 @@ def analyze_blendshapes(bs_dict):
     }
 
     global _bs_in_anger
+    # 눈 감김 감지: eyeBlink > 0.5 이면 눈을 감은 것으로 간주 → 분노 억제
+    blink = (bs_dict.get('eyeBlinkLeft', 0.0) + bs_dict.get('eyeBlinkRight', 0.0)) / 2
+    if blink > 0.5:
+        _bs_in_anger = False
+        return '일반', 0.50, True, dbg
     if happy_score >= 0.14 and smile >= 0.07 and happy_score >= angry_score + 0.05:
         _bs_in_anger = False
         return '행복', float(np.clip(0.55 + happy_score * 0.44, 0, 0.99)), True, dbg
-    elif angry_score >= 0.04 and brow_down > 0.006:
+    elif angry_score >= 0.6 and brow_down > 0.009:
         _bs_in_anger = True
         return '분노', float(np.clip(0.55 + angry_score * 0.44, 0, 0.99)), True, dbg
     else:
@@ -221,12 +233,13 @@ _LM = dict(
     L_SMILE_CHEEK=116, R_SMILE_CHEEK=345,
 )
 
-_AU_BUFS      = {}
-_AU_BASELINE  = {}
-_AU_CALIB_MIN = 45
-_AU_BUF_SIZE  = 150
-_AU_LOCK      = threading.Lock()
-_au_in_anger  = False
+_AU_BUFS             = {}
+_AU_BASELINE         = {}
+_AU_CALIB_MIN        = 45
+_AU_BUF_SIZE         = 150
+_AU_LOCK             = threading.Lock()
+_au_in_anger         = False
+_AU_BASELINE_LOCKED  = False  # 버퍼 가득 차면 베이스라인 고정
 
 
 def _compute_au_features(face_lms):
@@ -279,17 +292,23 @@ def _compute_au_features(face_lms):
 
 
 def _au_update_baseline(feat):
+    global _AU_BASELINE_LOCKED
     with _AU_LOCK:
+        if _AU_BASELINE_LOCKED:
+            return
         if not _au_in_anger:
             for k, v in feat.items():
                 if k not in _AU_BUFS:
                     _AU_BUFS[k] = deque(maxlen=_AU_BUF_SIZE)
                 _AU_BUFS[k].append(v)
-            if len(_AU_BUFS.get('au12', [])) >= _AU_CALIB_MIN:
+            n = len(_AU_BUFS.get('au12', []))
+            if n >= _AU_CALIB_MIN:
                 for k, buf in list(_AU_BUFS.items()):
                     pct = 35 if k in ('au12', 'au12_L', 'au12_R',
                                        'mouth_w', 'au25', 'nostril_w') else 80
                     _AU_BASELINE[k] = float(np.percentile(buf, pct))
+            if n >= _AU_BUF_SIZE:  # 버퍼 가득 참 → 베이스라인 고정
+                _AU_BASELINE_LOCKED = True
 
 
 def analyze_emotion_geometric(face_lms):
@@ -343,10 +362,15 @@ def analyze_emotion_geometric(face_lms):
     }
 
     global _au_in_anger
+    # 눈 감김 감지: eye_h가 베이스라인의 50% 미만이면 눈을 감은 것으로 간주 → 분노 억제
+    eye_h_base = _AU_BASELINE.get('eye_h', feat['eye_h'])
+    if eye_h_base > 1e-5 and feat['eye_h'] < eye_h_base * 0.50:
+        _au_in_anger = False
+        return '일반', 0.50, True, dbg
     if happy_score >= 0.14 and au12_up >= 0.09 and happy_score >= angry_score + 0.05:
         _au_in_anger = False
         return '행복', float(np.clip(0.55 + happy_score * 0.44, 0, 0.99)), True, dbg
-    elif angry_score >= 0.04 and ibrow_close > 0.006:
+    elif angry_score >= 0.06 and ibrow_close > 0.009:
         _au_in_anger = True
         return '분노', float(np.clip(0.55 + angry_score * 0.44, 0, 0.99)), True, dbg
     else:
@@ -557,13 +581,15 @@ def _mjpeg_generator():
 
 @app.route('/recalibrate', methods=['POST'])
 def recalibrate():
-    global _bs_in_anger, _au_in_anger
+    global _bs_in_anger, _au_in_anger, _BS_BASELINE_LOCKED, _AU_BASELINE_LOCKED
     with _BS_LOCK:
         _BS_BUFS.clear(); _BS_BASELINE.clear()
     with _AU_LOCK:
         _AU_BUFS.clear(); _AU_BASELINE.clear()
     _bs_in_anger = False
     _au_in_anger = False
+    _BS_BASELINE_LOCKED = False
+    _AU_BASELINE_LOCKED = False
     print('[INFO] 캘리브레이션 초기화')
     return {'message': '무표정으로 1~2초 유지하세요'}
 
@@ -602,9 +628,8 @@ def api_status():
 
     if em == '분노':
         signal = 'red'
-    elif em == '행복':
-        signal = 'green'
     else:
+        # 행복/일반 모두 1시간 내 일정이 있으면 노랑불 우선
         events = _load_json(_CALENDAR_FILE)
         now    = datetime.now()
         today  = now.strftime('%Y-%m-%d')
@@ -956,8 +981,8 @@ def camera_loop(cam_idx: int):
             recent = list(em_hist)
             top_em = cnt.most_common(1)[0][0]
             anger_ratio = recent.count('분노') / len(recent)
-            # 분노가 다수결 감정이거나, 다수결과 동률에 가깝고(50% 이상) 실제 지배적일 때만 분노 유지
-            if anger_ratio >= 0.50 and anger_ratio >= cnt.get(top_em, 0) / len(recent) * 0.85:
+            # 분노가 다수결 감정이거나, 다수결과 동률에 가깝고(60% 이상) 실제 지배적일 때만 분노 유지
+            if anger_ratio >= 0.70 and anger_ratio >= cnt.get(top_em, 0) / len(recent) * 0.85:
                 em = '분노'
             else:
                 em = top_em
