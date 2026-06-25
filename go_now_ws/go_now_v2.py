@@ -378,7 +378,7 @@ def analyze_emotion_geometric(face_lms):
     if happy_score >= 0.14 and au12_up >= 0.09 and happy_score >= angry_score + 0.05:
         _au_in_anger = False
         return '행복', float(np.clip(0.55 + happy_score * 0.44, 0, 0.99)), True, dbg
-    elif angry_score >= 0.06 and ibrow_close > 0.009:
+    elif angry_score >= 0.08 and ibrow_close > 0.009:
         _au_in_anger = True
         return '분노', float(np.clip(0.55 + angry_score * 0.44, 0, 0.99)), True, dbg
     else:
