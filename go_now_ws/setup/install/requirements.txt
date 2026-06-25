@@ -1,0 +1,14 @@
+# ──────────────────────────────────────────────────────────────
+# 결재 레이더 — 통합 전체 의존성
+#   단일 기기에서 cam + mic 를 모두 돌릴 때(= run_all.py --role all)
+#   이 파일 하나로 설치:  pip install -r requirements.txt
+#
+#   기기를 분리한다면 각 기기에서:
+#     cam 기기 →  pip install -r requirements-cam.txt
+#     mic 기기 →  pip install -r requirements-mic.txt
+#
+#   ※ pip 만으로는 안 되는 시스템 패키지/모델이 있습니다. 한 번에 끝내려면
+#      setup.sh 를 쓰세요:   ./setup.sh all   (또는 cam / mic)
+# ──────────────────────────────────────────────────────────────
+-r requirements-cam.txt
+-r requirements-mic.txt

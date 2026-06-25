@@ -1033,8 +1033,13 @@ def camera_loop(cam_idx: int):
             if now_ts - _last_record_ts >= 1.0:
                 with _emotion_hist_lock:
                     _EMOTION_HISTORY.append((now_ts, em))
+                if _RADAR_AVAILABLE:
+                    try:
+                        get_processor().add_expression(em, now_ts)
+                    except Exception:
+                        pass
                 _last_record_ts = now_ts
-
+                
             col = EMOTION_COLOR[em]
             cv2.rectangle(frame, (bx1, by1), (bx2, by2), col, 2)
 

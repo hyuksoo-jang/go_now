@@ -1,0 +1,18 @@
+# ──────────────────────────────────────────────────────────────
+# 결재 레이더 — mic 기기 의존성
+#   mic_agent.py : 한숨(YAMNet TFLite) + 발화(STT faster-whisper / KoBERT)
+# ──────────────────────────────────────────────────────────────
+numpy>=1.24,<2.0
+sounddevice>=0.4.6           # PortAudio 기반 (apt: libportaudio2 필요)
+webrtcvad>=2.0.10
+
+# 한숨 감지 (YAMNet TFLite). ARM/라즈베리파이 휠 제공.
+# tflite-runtime 설치가 안 되는 환경이면 tensorflow 로 자동 폴백됨(setup.sh 참고).
+tflite-runtime>=2.13
+
+# 발화 감정 (STT + KoBERT)
+faster-whisper>=1.0          # ctranslate2/av 포함 (apt: ffmpeg 권장)
+torch>=2.2                   # CPU 빌드 (Pi/ARM64 자동 선택)
+transformers>=4.36
+kobert-transformers>=0.6.0
+sentencepiece>=0.1.99        # KoBERT 토크나이저

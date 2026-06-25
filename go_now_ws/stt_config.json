@@ -1,0 +1,9 @@
+{
+  "whisper_size": "base",
+  "compute_type": "int8",
+  "beam_size": 5,
+  "vad_filter": true,
+  "_source": "speech_tuner",
+  "_cer_mean_pct": 4.88,
+  "_updated": "2026-06-25T16:32:22"
+}

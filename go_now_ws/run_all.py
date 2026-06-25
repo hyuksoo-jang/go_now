@@ -106,7 +106,9 @@ def _shutdown(sig=None, frame=None):
 
 def _parse_args(argv):
     a = {"cam_idx": "0", "role": "all", "radar_host": "localhost",
-         "device": None, "no_calib": False, "no_sigh": False, "no_speech": False}
+         "device": None, "no_calib": False, "no_sigh": False, "no_speech": False,
+         "whisper_size": None, "beam_size": None, "vad_filter": False,
+         "compute_type": None, "stt_config": None}
     it = iter(argv)
     for arg in it:
         if arg == "--role":
@@ -125,6 +127,24 @@ def _parse_args(argv):
             a["no_sigh"] = True
         elif arg == "--no-speech":
             a["no_speech"] = True
+        elif arg == "--whisper-size":
+            a["whisper_size"] = next(it, None)
+        elif arg.startswith("--whisper-size="):
+            a["whisper_size"] = arg.split("=", 1)[1]
+        elif arg == "--beam-size":
+            a["beam_size"] = next(it, None)
+        elif arg.startswith("--beam-size="):
+            a["beam_size"] = arg.split("=", 1)[1]
+        elif arg == "--vad-filter":
+            a["vad_filter"] = True
+        elif arg == "--compute-type":
+            a["compute_type"] = next(it, None)
+        elif arg.startswith("--compute-type="):
+            a["compute_type"] = arg.split("=", 1)[1]
+        elif arg == "--stt-config":
+            a["stt_config"] = next(it, None)
+        elif arg.startswith("--stt-config="):
+            a["stt_config"] = arg.split("=", 1)[1]
         elif arg.isdigit():
             a["cam_idx"] = arg
     if a["role"] not in ("cam", "mic", "all", "check"):
@@ -196,6 +216,16 @@ def main():
             cmd.append("--no-sigh")
         if a["no_speech"]:
             cmd.append("--no-speech")
+        if a["whisper_size"]:
+            cmd += ["--whisper-size", str(a["whisper_size"])]
+        if a["beam_size"]:
+            cmd += ["--beam-size", str(a["beam_size"])]
+        if a["vad_filter"]:
+            cmd.append("--vad-filter")
+        if a["compute_type"]:
+            cmd += ["--compute-type", str(a["compute_type"])]
+        if a["stt_config"]:
+            cmd += ["--stt-config", str(a["stt_config"])]
         _log("run", "mic_agent.py 시작...")
         _start(cmd, tag="mic", env=mic_env)
 
