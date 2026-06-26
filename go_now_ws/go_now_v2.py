@@ -497,6 +497,10 @@ _frame_lock      = threading.Lock()
 _latest_jpeg     = b''
 _camera_ok       = False
 _current_emotion = '일반'
+_FACE_ABSENT_TIMEOUT_SEC = 10.0
+_face_state_lock = threading.Lock()
+_last_face_seen_ts = time.time()
+_face_absent = False
 
 _CALENDAR_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'calendar_data.json')
 _APPROVAL_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'approval_data.json')
@@ -509,6 +513,33 @@ _speech_calib_lock = threading.Lock()
 _EMOTION_HISTORY = deque(maxlen=600)
 _emotion_hist_lock = threading.Lock()
 _last_record_ts = 0.0
+
+
+def _update_face_absence(face_detected: bool, now_ts: float = None) -> bool:
+    global _last_face_seen_ts, _face_absent
+    if now_ts is None:
+        now_ts = time.time()
+    with _face_state_lock:
+        if face_detected:
+            _last_face_seen_ts = now_ts
+            _face_absent = False
+        else:
+            _face_absent = (now_ts - _last_face_seen_ts) >= _FACE_ABSENT_TIMEOUT_SEC
+        return _face_absent
+
+
+def _is_face_absent() -> bool:
+    with _face_state_lock:
+        return _face_absent
+
+
+def _mic_blocked_response():
+    return jsonify({
+        "ok": False,
+        "blocked": True,
+        "reason": "face_absent",
+        "message": "자리비움 상태에서는 마이크 입력이 차단됩니다.",
+    }), 423
 
 
 def _window_emotion(minutes):
@@ -626,6 +657,9 @@ def api_status():
     global _current_emotion
 
     window = request.args.get('window', 'realtime')
+    if _is_face_absent():
+        return jsonify({'emotion': '자리비움', 'signal': 'none', 'window': window, 'face_absent': True})
+
     if window in ('1', '5', '10'):
         em = _window_emotion(int(window))
         if em is None:
@@ -653,7 +687,7 @@ def api_status():
                     break
             except Exception:
                 pass
-    return jsonify({'emotion': em, 'signal': signal, 'window': window})
+    return jsonify({'emotion': em, 'signal': signal, 'window': window, 'face_absent': False})
 
 
 @app.route('/api/radar/signals')
@@ -663,6 +697,7 @@ def api_radar_signals():
     try:
         radar = get_processor()
         signals = radar.get_all_signals()
+        signals['face_absent'] = _is_face_absent()
         return jsonify(signals)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -672,6 +707,8 @@ def api_radar_signals():
 def api_radar_add_sigh():
     if not _RADAR_AVAILABLE:
         return jsonify({"error": "radar processor not available"}), 503
+    if _is_face_absent():
+        return _mic_blocked_response()
     try:
         data = request.get_json(force=True)
         detected = data.get("detected", False)
@@ -687,6 +724,8 @@ def api_radar_add_sigh():
 def api_radar_add_speech_emotion():
     if not _RADAR_AVAILABLE:
         return jsonify({"error": "radar processor not available"}), 503
+    if _is_face_absent():
+        return _mic_blocked_response()
     try:
         data = request.get_json(force=True)
         emotion = data.get("emotion", "")
@@ -722,6 +761,8 @@ def api_radar_speech_heartbeat():
     """발화 파이프라인 alive 신호 (감정 데이터 없이 장치 상태만 갱신)."""
     if not _RADAR_AVAILABLE:
         return jsonify({"error": "radar processor not available"}), 503
+    if _is_face_absent():
+        return _mic_blocked_response()
     try:
         get_processor().mark_speech_alive()
         return jsonify({"ok": True})
@@ -944,9 +985,16 @@ def camera_loop(cam_idx: int):
         ko_overlays   = []
         face_detected = (_last_mesh is not None
                          and _last_mesh.multi_face_landmarks)
+        now_ts = time.time()
+        face_absent = _update_face_absence(bool(face_detected), now_ts)
+        if face_absent:
+            _current_emotion = '자리비움'
+        elif _current_emotion == '자리비움':
+            _current_emotion = '일반'
 
         if not face_detected:
-            pass
+            if face_absent:
+                ko_overlays.append(('자리비움', (14, fH - 16), (140, 140, 140), 24))
         else:
             face_lms = _last_mesh.multi_face_landmarks[0]
 

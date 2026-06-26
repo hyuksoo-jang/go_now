@@ -122,7 +122,7 @@ header h1 .dot{width:8px;height:8px;border-radius:50%;background:var(--state);bo
 .btn-calib{background:#6e40c9; color:#fff; border:none; border-radius:8px; margin-top:8px; width:100%; padding:8px; font-size:.82rem; cursor:pointer; transition:.15s}
 .btn-calib:hover{background:#8957e5}
 .btn-calib:disabled{opacity:.5; cursor:default}
-.cmsg{text-align:center; font-size:.74rem; min-height:1em; margin-top:5px}
+.cmsg{text-align:center; font-size:.74rem; min-height:0}
 
 .pn-graph{flex:1; min-height:120px}
 .graph-legend{display:flex; gap:12px; justify-content:center; font-size:.68rem; margin-bottom:5px; flex-shrink:0; color:var(--tx2)}
@@ -329,7 +329,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
 .sig-col{display:flex; flex-direction:column; align-items:center; gap:8px; flex:0 0 auto}
 .sig-window{background:#161b22; color:var(--tx); border:1px solid var(--line); border-radius:8px; padding:5px 8px; font-size:.72rem; font-weight:600; cursor:pointer; font-family:inherit; text-align:center}
 .sig-window:focus{outline:none; border-color:var(--state)}
-.btn-vcalib{background:#0d3a2a; color:#34c759; border:1px solid #1a5c40; border-radius:8px; margin-top:6px; width:100%; padding:8px; font-size:.82rem; cursor:pointer; transition:.15s; font-family:inherit}
+.btn-vcalib{background:#0d3a2a; color:#34c759; border:1px solid #1a5c40; border-radius:8px; margin-top:0; width:100%; padding:8px; font-size:.82rem; cursor:pointer; transition:.15s; font-family:inherit}
 .btn-vcalib:hover{background:#1a5c40}
 .btn-vcalib:disabled{opacity:.5; cursor:default}
 </style>
@@ -627,19 +627,18 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
       el.classList.toggle('on',k===which); el.classList.toggle('off',k!==which);
     });
     var tw=document.getElementById('tower'); if(tw) tw.classList.toggle('mm',!!mm);
-    var tm=document.getElementById('tower-mm'); if(tm) tm.textContent=mm?'불일치':'';
+    var tm=document.getElementById('tower-mm'); if(tm){tm.textContent=mm?'불일치':'';tm.style.color='';}
     document.body.classList.toggle('emg-mode',which==='r');
     document.body.setAttribute('data-signal', which==='r'?'red':(which==='o'?'orange':'green'));
   }
   function showMeasuring(win){
     ['r','o','g'].forEach(function(k){var el=document.getElementById('lamp-'+k);if(el){el.classList.remove('on');el.classList.add('off');}});
     var tw=document.getElementById('tower'); if(tw) tw.classList.remove('mm');
-    var tm=document.getElementById('tower-mm'); if(tm) tm.textContent='측정중';
+    var tm=document.getElementById('tower-mm'); if(tm){tm.textContent='측정중';tm.style.color='var(--tx2)';}
     document.body.classList.remove('emg-mode');
     document.body.setAttribute('data-signal','none');
     document.body.style.setProperty('--state','#8b949e');
     document.body.style.setProperty('--state-soft','rgba(139,148,158,.12)');
-    var lbl={'1':'1분','5':'5분','10':'10분'}[win]||'';
     document.getElementById('v-lvl').textContent='측정중입니다';
     document.getElementById('v-why').textContent='';
     var cb=document.getElementById('clr-badge'); if(cb){cb.textContent='';cb.className='clr-badge';}
@@ -647,6 +646,36 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     var rms=document.getElementById('r-mood-sub'); if(rms) rms.textContent='';
     var rt=document.getElementById('r-time'); if(rt) rt.textContent='–';
     var rts=document.getElementById('r-time-sub'); if(rts) rts.textContent='';
+  }
+  function setCalibAbsentBlock(blocked){
+    ['calibBtn','vcalibBtn','goBtn'].forEach(function(id){
+      var btn=document.getElementById(id);
+      if(!btn)return;
+      if(blocked){
+        btn.dataset.absentBlocked='1';
+        btn.disabled=true;
+      }else if(btn.dataset.absentBlocked==='1'){
+        btn.disabled=false;
+        delete btn.dataset.absentBlocked;
+      }
+    });
+  }
+  function showFaceAbsent(){
+    setCalibAbsentBlock(true);
+    ['r','o','g'].forEach(function(k){var el=document.getElementById('lamp-'+k);if(el){el.classList.remove('on');el.classList.add('off');}});
+    var tw=document.getElementById('tower'); if(tw) tw.classList.remove('mm');
+    var tm=document.getElementById('tower-mm'); if(tm){tm.textContent='자리비움';tm.style.color='var(--tx2)';}
+    document.body.classList.remove('emg-mode');
+    document.body.setAttribute('data-signal','none');
+    document.body.style.setProperty('--state','#8b949e');
+    document.body.style.setProperty('--state-soft','rgba(139,148,158,.12)');
+    document.getElementById('v-lvl').textContent='자리비움';
+    document.getElementById('v-why').textContent='10초 이상 얼굴 미인식으로 마이크 입력이 차단되었습니다.';
+    var cb=document.getElementById('clr-badge'); if(cb){cb.textContent='자리비움';cb.className='clr-badge clr-wait';}
+    var rm=document.getElementById('r-mood'); if(rm){rm.textContent='자리비움';rm.className='big';}
+    var rms=document.getElementById('r-mood-sub'); if(rms) rms.textContent='카메라 얼굴 인식 대기';
+    var rt=document.getElementById('r-time'); if(rt) rt.textContent='대기';
+    var rts=document.getElementById('r-time-sub'); if(rts) rts.textContent='얼굴 인식 후 재개';
   }
 
   function nextEventToday(){
@@ -658,6 +687,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
   }
   function computeVerdict(){
     if(lastStatus.signal==='measuring'){ showMeasuring(lastStatus.window); return; }
+    if(lastStatus.signal==='absent'||lastStatus.face_absent===true||lastStatus.faceAbsent===true){ showFaceAbsent(); return; }
     var s=lastStatus.signal, emo=lastStatus.emotion;
     var mismatch=(lastStatus.mismatch===true);
     var todayAps=apData.filter(function(a){return a.date===todayStr();});
@@ -695,6 +725,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
   }
 
   function renderVerdict(V,ctx){
+    setCalibAbsentBlock(false);
     document.getElementById('v-lvl').textContent=V.lvl;
     document.getElementById('v-why').textContent=V.why;
     setCockpit(V.cockpit||V.color);
@@ -747,6 +778,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
   }
 
   function applyStatusUI(d){
+    if(d&&d.signal==='measuring') setCalibAbsentBlock(false);
     document.getElementById('hdot').style.background='var(--state)';
     document.getElementById('embdg').textContent=d.emotion||'';
     computeVerdict();
@@ -763,6 +795,11 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     if(w==='1'||w==='5'||w==='10'){
       fetch('/api/radar/signals').then(function(r){return r.json();}).then(function(d){
         usingDemo=false;
+        if(d&&d.face_absent===true){
+          lastStatus={signal:'absent',emotion:'자리비움',window:w,face_absent:true};
+          applyStatusUI(lastStatus);
+          return;
+        }
         var rd=d[w+'m'];
         if(!rd||rd.ready===false||rd.data_points.expression===0){lastStatus={signal:'measuring',window:w};applyStatusUI(lastStatus);return;}
         var sig=rd.signal==='yellow'?'orange':rd.signal;
