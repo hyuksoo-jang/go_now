@@ -713,7 +713,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
               {cls:'later',k:'일정 후',v:'무거운 건'}];
     }else{
       V.lvl='지금 가세요'; V.mascot=(emo==='행복')?'good':'good';
-      V.why=(emo==='행복')?'기분도 좋고 여유 있어요. 좋은 타이밍이에요.':'일정에 여유가 있고 기분이 안정적이에요.';
+      V.why=(emo==='행복')?'기분도 좋고 일정에 여유가 있어요. 좋은 타이밍이에요.':'일정에 여유가 있고 기분이 안정적이에요.';
       if(todayAps.length){
         V.acts=[{cls:'now',k:'지금',v:(urgent.length?urgent[0].title:todayAps[0].title)}];
         if(todayAps.length>1) V.acts.push({cls:'later',k:'이어서',v:'나머지 '+(todayAps.length-1)+'건'});
