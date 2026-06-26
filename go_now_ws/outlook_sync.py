@@ -27,7 +27,7 @@ _CALENDAR_FILE = os.path.join(_DIR, 'calendar_data.json')
 _DEFAULT_CONFIG = {
     "ics_url":        "",   # Outlook ICS 구독 URL (필수)
     "sync_days_ahead": 30,  # 오늘부터 몇 일 후까지 저장할지
-    "sync_days_past":  0,   # 오늘로부터 며칠 과거 이벤트까지 저장할지
+    "sync_days_past":  0,   # 0 이하면 과거 전체 포함, 양수면 해당 일수만 포함
 }
 
 _sync_lock   = threading.Lock()
@@ -193,7 +193,8 @@ def sync_now():
             today      = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
             days_past  = int(cfg.get('sync_days_past', 0))
             days_ahead = int(cfg.get('sync_days_ahead', 30))
-            cutoff_lo  = today - timedelta(days=days_past)
+            # sync_days_past <= 0 이면 과거 전체를 동기화한다.
+            cutoff_lo  = datetime.min if days_past <= 0 else (today - timedelta(days=days_past))
             cutoff_hi  = today + timedelta(days=days_ahead)
 
             new_items = []

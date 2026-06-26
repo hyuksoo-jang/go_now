@@ -134,6 +134,7 @@ _BS_CALIB_MIN        = 35
 _BS_LOCK             = threading.Lock()
 _bs_in_anger         = False
 _BS_BASELINE_LOCKED  = False  # 버퍼 가득 차면 베이스라인 고정
+_DISABLE_BASELINE_LEARNING = True  # True면 지속 학습 없이 초기 1회만 기준 고정
 
 _ALL_TRACKED_BS = [
     'mouthSmileLeft', 'mouthSmileRight',
@@ -152,6 +153,11 @@ def _bs_update_baseline(bs_dict):
     with _BS_LOCK:
         if _BS_BASELINE_LOCKED:
             return
+        if _DISABLE_BASELINE_LEARNING:
+            for k in _ALL_TRACKED_BS:
+                _BS_BASELINE[k] = float(bs_dict.get(k, 0.0))
+            _BS_BASELINE_LOCKED = True
+            return
         if not _bs_in_anger:
             for k in _ALL_TRACKED_BS:
                 v = bs_dict.get(k, 0.0)
@@ -168,7 +174,7 @@ def _bs_update_baseline(bs_dict):
 
 def analyze_blendshapes(bs_dict):
     _bs_update_baseline(bs_dict)
-    if len(_BS_BUFS.get('mouthSmileLeft', [])) < _BS_CALIB_MIN:
+    if (not _DISABLE_BASELINE_LEARNING) and len(_BS_BUFS.get('mouthSmileLeft', [])) < _BS_CALIB_MIN:
         pct = len(_BS_BUFS.get('mouthSmileLeft', [])) / _BS_CALIB_MIN
         return '일반', 0.5, False, {'calib_pct': pct}
 
@@ -304,6 +310,11 @@ def _au_update_baseline(feat):
     with _AU_LOCK:
         if _AU_BASELINE_LOCKED:
             return
+        if _DISABLE_BASELINE_LEARNING:
+            for k, v in feat.items():
+                _AU_BASELINE[k] = float(v)
+            _AU_BASELINE_LOCKED = True
+            return
         if not _au_in_anger:
             for k, v in feat.items():
                 if k not in _AU_BUFS:
@@ -325,7 +336,7 @@ def analyze_emotion_geometric(face_lms):
         return '일반', 0.5, False, {}
 
     _au_update_baseline(feat)
-    if len(_AU_BUFS.get('au12', [])) < _AU_CALIB_MIN:
+    if (not _DISABLE_BASELINE_LEARNING) and len(_AU_BUFS.get('au12', [])) < _AU_CALIB_MIN:
         pct = len(_AU_BUFS.get('au12', [])) / _AU_CALIB_MIN
         return '일반', 0.5, False, {'calib_pct': pct}
 
@@ -569,6 +580,32 @@ def _window_emotion(minutes):
     return '일반'
 
 
+def _next_event_within_1h():
+    events = _load_json(_CALENDAR_FILE)
+    now = datetime.now()
+    today = now.strftime('%Y-%m-%d')
+    nearest = None
+    nearest_diff = None
+    for ev in events:
+        if ev.get('date') != today:
+            continue
+        try:
+            ev_dt = datetime.strptime(f"{today} {ev.get('time', '00:00')}", '%Y-%m-%d %H:%M')
+            diff = (ev_dt - now).total_seconds()
+            if 0 <= diff <= 3600 and (nearest_diff is None or diff < nearest_diff):
+                nearest_diff = diff
+                nearest = {
+                    'id': ev.get('id', ''),
+                    'date': ev.get('date', ''),
+                    'time': ev.get('time', ''),
+                    'title': ev.get('title', ''),
+                    'note': ev.get('note', ''),
+                }
+        except Exception:
+            pass
+    return nearest
+
+
 def _load_json(path):
     with _data_lock:
         if os.path.exists(path):
@@ -670,24 +707,18 @@ def api_status():
 
     if em == '분노':
         signal = 'red'
+        next_ev = None
     else:
-        # 행복/일반 모두 1시간 내 일정이 있으면 노랑불 우선
-        events = _load_json(_CALENDAR_FILE)
-        now    = datetime.now()
-        today  = now.strftime('%Y-%m-%d')
-        signal = 'green'
-        for ev in events:
-            if ev.get('date') != today:
-                continue
-            try:
-                ev_dt = datetime.strptime(f"{today} {ev.get('time','00:00')}", '%Y-%m-%d %H:%M')
-                diff  = (ev_dt - now).total_seconds()
-                if 0 <= diff <= 3600:
-                    signal = 'orange'
-                    break
-            except Exception:
-                pass
-    return jsonify({'emotion': em, 'signal': signal, 'window': window, 'face_absent': False})
+        next_ev = _next_event_within_1h()
+        signal = 'orange' if next_ev else 'green'
+    return jsonify({
+        'emotion': em,
+        'signal': signal,
+        'window': window,
+        'face_absent': False,
+        'has_upcoming_1h': bool(next_ev),
+        'next_event_1h': next_ev,
+    })
 
 
 @app.route('/api/radar/signals')
@@ -697,6 +728,9 @@ def api_radar_signals():
     try:
         radar = get_processor()
         signals = radar.get_all_signals()
+        next_ev = _next_event_within_1h()
+        signals['has_upcoming_1h'] = bool(next_ev)
+        signals['next_event_1h'] = next_ev
         signals['face_absent'] = _is_face_absent()
         return jsonify(signals)
     except Exception as e:
