@@ -327,7 +327,7 @@ def main():
     ap.add_argument("--threads", type=int, default=4, help="CPU 스레드")
     ap.add_argument("--quick", action="store_true",
                     help="빠른 격자(base,small × beam1,5 × vad0)")
-    ap.add_argument("--config", default="/home/willtek/work/main_project/go_now/go_now_ws/stt_config.json",
+    ap.add_argument("--config", default="../../stt_config.json",
                     help="추천 size/compute 를 저장할 STT 설정 파일 (mic_agent 가 읽음)")
     ap.add_argument("--no-write-config", action="store_true",
                     help="추천값을 stt_config.json 에 저장하지 않음")
