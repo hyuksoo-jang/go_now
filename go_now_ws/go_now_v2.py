@@ -508,7 +508,7 @@ _frame_lock      = threading.Lock()
 _latest_jpeg     = b''
 _camera_ok       = False
 _current_emotion = '일반'
-_FACE_ABSENT_TIMEOUT_SEC = 10.0
+_FACE_ABSENT_TIMEOUT_SEC = 5.0
 _face_state_lock = threading.Lock()
 _last_face_seen_ts = time.time()
 _face_absent = False
@@ -658,14 +658,17 @@ def _mjpeg_generator():
 @app.route('/recalibrate', methods=['POST'])
 def recalibrate():
     global _bs_in_anger, _au_in_anger, _BS_BASELINE_LOCKED, _AU_BASELINE_LOCKED
+    # 베이스라인 데이터 및 잠금 초기화
+    # _DISABLE_BASELINE_LEARNING=True 일 때도 잠금을 해제해야
+    # 다음 프레임에서 새 값으로 1회 재캡처가 가능하다.
     with _BS_LOCK:
         _BS_BUFS.clear(); _BS_BASELINE.clear()
+        _BS_BASELINE_LOCKED = False
     with _AU_LOCK:
         _AU_BUFS.clear(); _AU_BASELINE.clear()
+        _AU_BASELINE_LOCKED = False
     _bs_in_anger = False
     _au_in_anger = False
-    _BS_BASELINE_LOCKED = False
-    _AU_BASELINE_LOCKED = False
     print('[INFO] 캘리브레이션 초기화')
     return {'message': '무표정으로 1~2초 유지하세요'}
 
