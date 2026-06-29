@@ -134,7 +134,7 @@ _BS_CALIB_MIN        = 35
 _BS_LOCK             = threading.Lock()
 _bs_in_anger         = False
 _BS_BASELINE_LOCKED  = False  # 버퍼 가득 차면 베이스라인 고정
-_DISABLE_BASELINE_LEARNING = True  # True면 지속 학습 없이 초기 1회만 기준 고정
+_DISABLE_BASELINE_LEARNING = False  # True면 지속 학습 없이 초기 1회만 기준 고정
 
 _ALL_TRACKED_BS = [
     'mouthSmileLeft', 'mouthSmileRight',
