@@ -5,37 +5,5 @@
     "time": "12:00",
     "title": "회의",
     "note": ""
-  },
-  {
-    "id": "9e0af846-ced9-4a30-ac5f-54d1862546fa",
-    "date": "2026-06-25",
-    "time": "12:00",
-    "title": "회의",
-    "note": "",
-    "_outlook": true
-  },
-  {
-    "id": "16abb71d-875a-4be4-9ab3-468a061b226a",
-    "date": "2026-06-25",
-    "time": "16:00",
-    "title": "회의 2",
-    "note": "",
-    "_outlook": true
-  },
-  {
-    "id": "dcf2f5ec-edb0-420f-a754-ef21fa944b12",
-    "date": "2026-06-25",
-    "time": "17:00",
-    "title": "회의 3",
-    "note": "",
-    "_outlook": true
-  },
-  {
-    "id": "cbb7f01e-5f5d-4b0e-aed6-4dcbd1a6ba05",
-    "date": "2026-06-26",
-    "time": "00:00",
-    "title": "회의",
-    "note": "",
-    "_outlook": true
   }
 ]

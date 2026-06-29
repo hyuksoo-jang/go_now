@@ -1,0 +1,14 @@
+{
+  "gate_margin": 1.6,
+  "over_frac": 0.313,
+  "_upper_rms_at_tuning": 631.3,
+  "_speech_rms_median": 394.5,
+  "_speech_rms_p95": 780.6,
+  "_speech_rms_p99": 942.1,
+  "_noise_rms": 161.8,
+  "_snr_db": 7.7,
+  "_clean_accept": 1.0,
+  "_frame_ms": 30,
+  "_vad_aggr": 1,
+  "_generated_at": "2026-06-29T11:07:34"
+}
