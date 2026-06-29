@@ -482,7 +482,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
   <div class="panel" data-panel="analysis">
     <div class="pn" style="flex:1;min-height:0;overflow:auto">
       <div class="pt"><span>&#128202; 상세 원인 분석</span><span class="badge" id="anz-updated"></span></div>
-      <div style="font-size:.78rem;color:var(--tx2);margin-bottom:10px;line-height:1.5">각 구간(1·5·10분)의 신호등이 알고리즘에서 어떻게 결정됐는지 단계별로 보여줍니다. 우선순위: ① 한숨 → ② 표정 대표값 → ③ 발화 부정 개수 → ④ 기본값(노랑). 굵게 표시된 단계에서 신호가 확정됩니다.</div>
+      <div style="font-size:.78rem;color:var(--tx2);margin-bottom:10px;line-height:1.5">각 구간(1·5·10분)의 신호등이 알고리즘에서 어떻게 결정됐는지 단계별로 보여줍니다. 우선순위: ① 한숨 → ② 표정 대표값 → ③ 발화 부정 개수 → ④ 기본값(초록). 굵게 표시된 단계에서 신호가 확정됩니다.</div>
       <div id="anz-cards"></div>
     </div>
   </div>
@@ -680,9 +680,10 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
 
   function nextEventToday(){
     var t=todayStr(), now=new Date().getHours()*60+new Date().getMinutes();
+    var limit=now+60;
     var evs=calData.filter(function(e){return e.date===t && e.time;})
       .map(function(e){var p=e.time.split(':');return {m:(+p[0])*60+(+p[1]),time:e.time.substring(0,5),title:e.title};})
-      .filter(function(e){return e.m>=now;}).sort(function(a,b){return a.m-b.m;});
+      .filter(function(e){return e.m>=now && e.m<=limit;}).sort(function(a,b){return a.m-b.m;});
     return evs.length?evs[0]:null;
   }
   function computeVerdict(){
@@ -692,7 +693,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     var mismatch=(lastStatus.mismatch===true);
     var todayAps=apData.filter(function(a){return a.date===todayStr();});
     var urgent=todayAps.filter(function(a){return URGENT_RE.test((a.title||'')+' '+(a.note||''));});
-    var nextEv=nextEventToday();
+    var nextEv=(lastStatus.next_event_1h&&lastStatus.next_event_1h.time)?lastStatus.next_event_1h:nextEventToday();
 
     var V={lvl:'',color:s,why:'',mascot:'busy',acts:[]};
 
@@ -706,13 +707,13 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
       V.acts=[{cls:'now',k:'지금',v:urgent.length?urgent[0].title:(todayAps.length?'가벼운 1건만':'없음')},
               {cls:'later',k:'잠시 뒤',v:'무거운 건 보류'}];
     }else if(s==='orange'){
-      V.lvl='팀장님 일정 임박'; V.mascot='busy';
-      V.why=nextEv?(nextEv.time+' '+nextEv.title+' 전이에요. 짧게 끝낼 것만.'):'곧 일정이 있어요. 짧게 끝낼 것만.';
+      V.lvl=nextEv?'팀장님 일정 임박':'주의 신호'; V.mascot='busy';
+      V.why=nextEv?(nextEv.time+' '+nextEv.title+' 전이에요. 짧게 끝낼 것만.'):'주의 신호예요. 짧게 끝낼 것만 권장해요.';
       V.acts=[{cls:'now',k:'지금 · 짧게',v:todayAps.length?(todayAps[0].title):'가벼운 건'},
               {cls:'later',k:'일정 후',v:'무거운 건'}];
     }else{
       V.lvl='지금 가세요'; V.mascot=(emo==='행복')?'good':'good';
-      V.why=(emo==='행복')?'기분도 좋고 여유 있어요. 좋은 타이밍이에요.':'일정에 여유가 있고 기분이 안정적이에요.';
+      V.why=(emo==='행복')?'기분도 좋고 일정에 여유가 있어요. 좋은 타이밍이에요.':'일정에 여유가 있고 기분이 안정적이에요.';
       if(todayAps.length){
         V.acts=[{cls:'now',k:'지금',v:(urgent.length?urgent[0].title:todayAps[0].title)}];
         if(todayAps.length>1) V.acts.push({cls:'later',k:'이어서',v:'나머지 '+(todayAps.length-1)+'건'});
@@ -751,7 +752,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     var tBig,tSub;
     if(ctx.signal==='red'){tBig='잠시 뒤';tSub='기분 풀린 후';}
     else if(ctx.mismatch){tBig='지금 (가볍게)';tSub='무거운 건 대기';}
-    else if(ctx.signal==='orange'){if(ctx.nextEv){tBig=ctx.nextEv.time+' 전';tSub='짧게 끝낼 것만';}else{tBig='지금 짧게';tSub='곧 일정';}}
+    else if(ctx.signal==='orange'){if(ctx.nextEv){tBig=ctx.nextEv.time+' 전';tSub='짧게 끝낼 것만';}else{tBig='지금 짧게';tSub='주의 신호';}}
     else{tBig='지금';tSub=(ctx.emo==='행복')?'좋은 타이밍':'여유 있음';}
     document.getElementById('r-time').textContent=tBig;
     document.getElementById('r-time-sub').textContent=tSub;
@@ -802,9 +803,10 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
         }
         var rd=d[w+'m'];
         if(!rd||rd.ready===false||rd.data_points.expression===0){lastStatus={signal:'measuring',window:w};applyStatusUI(lastStatus);return;}
-        var sig=rd.signal==='yellow'?'orange':rd.signal;
+        var sig=rd.signal==='yellow'?'green':rd.signal;
+        if(sig!=='red'&&d&&d.has_upcoming_1h===true) sig='orange';
         var emo=rd.expr==='불명'?'일반':rd.expr;
-        lastStatus={signal:sig,emotion:emo,window:w,radarDetail:rd};
+        lastStatus={signal:sig,emotion:emo,window:w,radarDetail:rd,next_event_1h:d.next_event_1h||null};
         applyStatusUI(lastStatus);
       }).catch(function(){ if(!usingDemo) seedDemo(); });
     }else{
@@ -1148,7 +1150,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
       if(rd.neg_count>=th){steps.push({t:'③ 발화 부정',d:rd.neg_count+'개 ≥ 임계 '+th+'개',res:'🔴 빨강',on:true});fired=3;}
       else steps.push({t:'③ 발화 부정',d:rd.neg_count+'개 < 임계 '+th+'개',res:'다음 단계 ↓',on:false});
     }else steps.push({t:'③ 발화 부정',d:rd.neg_count+'개',res:'평가 안 함',on:false});
-    if(!fired)steps.push({t:'④ 기본값',d:'위 조건 모두 불충족',res:'🟡 노랑',on:true});
+    if(!fired)steps.push({t:'④ 기본값',d:'위 조건 모두 불충족',res:'🟢 초록',on:true});
     return steps;
   }
   function renderAnalysis(){
@@ -1158,7 +1160,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
       var up=document.getElementById('anz-updated');
       if(up&&d.updated_at)up.textContent='업데이트 '+d.updated_at.substring(11,19);
       var th={'1m':1,'5m':2,'10m':3}, lbl={'1m':'최근 1분','5m':'최근 5분','10m':'최근 10분'};
-      var sigKo={red:'🔴 빨강',yellow:'🟡 노랑',green:'🟢 초록'};
+      var sigKo={red:'🔴 빨강',yellow:'🟢 초록',green:'🟢 초록'};
       var html='';
       ['1m','5m','10m'].forEach(function(k){
         var rd=d[k]; if(!rd)return;
