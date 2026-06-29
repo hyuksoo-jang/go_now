@@ -109,6 +109,29 @@ def load_stt_config(explicit=None):
                 print(f"[stt] ⚠ 설정 읽기 실패({p}): {e}", flush=True)
     return {}, None
 
+
+def load_gate_config(explicit=None):
+    """게이트 설정(gate_config.json) 자동 탐색·로드. 반환: (dict, 사용경로|None).
+    탐색 순서: 명시경로 → 현재폴더 → mic_agent.py 폴더. (gate_tuner.py 가 생성)"""
+    cands = []
+    if explicit:
+        cands.append(explicit)
+    cands.append(os.path.join(os.getcwd(), "gate_config.json"))
+    cands.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "gate_config.json"))
+    seen = set()
+    for p in cands:
+        if not p or p in seen:
+            continue
+        seen.add(p)
+        if os.path.exists(p):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    return json.load(f), p
+            except Exception as e:
+                print(f"[gate] ⚠ 설정 읽기 실패({p}): {e}", flush=True)
+    return {}, None
+
 # ── 오디오 공통 ──────────────────────────────────────────────
 SAMPLE_RATE   = 16000
 FRAME_MS      = 30
@@ -359,22 +382,27 @@ def calib_level_poster(stop_evt):
 
 
 def speech_assemble_loop(speech_q, utter_q, stop_evt, gate, vad_aggr):
-    """프레임 큐 → VAD 발화 조립 → utter_q (drop-oldest)."""
+    """프레임 큐 → VAD 발화 조립 → utter_q (drop-oldest).
+    폐기 규칙: '상한 초과 프레임 비율 > gate["over_frac"]' 일 때만 too_loud
+    (단일 프레임 초과가 아니라 비율 — gate_tuner.py 가 정한 over_frac 사용)."""
     vad = webrtcvad.Vad(vad_aggr)
     silence_frames = SILENCE_TAIL_MS // FRAME_MS
     triggered = False
     ring = collections.deque(maxlen=8)
     voiced, voiced_rms = [], []
     num_silence = 0
-    over_upper = False
+    over_cnt = 0
 
     def finish():
-        nonlocal triggered, voiced, voiced_rms, num_silence, over_upper
-        if voiced:
+        nonlocal triggered, voiced, voiced_rms, num_silence, over_cnt
+        if voiced_rms:
+            n = len(voiced_rms)
+            of = over_cnt / n
             stats = {"min": float(np.min(voiced_rms)),
                      "mean": float(np.mean(voiced_rms)),
-                     "max": float(np.max(voiced_rms))}
-            if over_upper:
+                     "max": float(np.max(voiced_rms)),
+                     "over_frac": round(of, 3)}
+            if of > gate.get("over_frac", 0.15):
                 put_drop_oldest(utter_q, (None, stats, "too_loud"), MAX_UTTER_QUEUE)
             else:
                 pcm = b"".join(voiced)
@@ -383,7 +411,7 @@ def speech_assemble_loop(speech_q, utter_q, stop_evt, gate, vad_aggr):
         triggered = False
         voiced, voiced_rms = [], []
         num_silence = 0
-        over_upper = False
+        over_cnt = 0
         ring.clear()
 
     while not stop_evt.is_set():
@@ -404,10 +432,10 @@ def speech_assemble_loop(speech_q, utter_q, stop_evt, gate, vad_aggr):
                 voiced_rms.append(rms)
                 ring.clear()
                 num_silence = 0
-                over_upper = False
+                over_cnt = 0
         else:
             if rms > upper:
-                over_upper = True
+                over_cnt += 1
             voiced.append(frame)
             voiced_rms.append(rms)
             num_silence = 0 if is_speech else num_silence + 1
@@ -436,7 +464,7 @@ def _run_autotune(stt, audio, ref):
 
 
 def speech_process_loop(utter_q, stop_evt, whisper_size, threads, min_chars,
-                        compute_type="int8"):
+                        compute_type="int8", over_frac_thr=0.15):
     """utter_q → 최신 발화만 STT → KoBERT → POST. STT_CFG(beam/vad)는 라이브 반영."""
     from faster_whisper import WhisperModel
     try:
@@ -482,7 +510,8 @@ def speech_process_loop(utter_q, stop_evt, whisper_size, threads, min_chars,
 
         audio, stats, reason = item
         if reason == "too_loud":
-            print("[speech] 🚫 폐기(상한 초과 소음 혼입)", flush=True)
+            print(f"[speech] 🚫 폐기(소음 혼입 {stats.get('over_frac', 0)*100:.0f}% "
+                  f"> 상한 {over_frac_thr*100:.0f}%)", flush=True)
             continue
 
         with STT_LOCK:
@@ -584,8 +613,12 @@ def main():
     ap.add_argument("--no-autotune", action="store_true",
                     help="캘리브레이션 시 beam/VAD 자동 튜닝 생략")
     ap.add_argument("--min-chars", type=int, default=2)
-    ap.add_argument("--gate-margin", type=float, default=1.6,
-                    help="발화 상한 = 테스트발화 RMS × margin")
+    ap.add_argument("--gate-margin", type=float, default=None,
+                    help="발화 상한 = 테스트발화 RMS × margin (미지정 시 gate_config→2.6)")
+    ap.add_argument("--over-frac", type=float, default=None,
+                    help="발화 중 상한 초과 프레임 비율이 이 값을 넘으면 폐기 (미지정 시 gate_config→0.15)")
+    ap.add_argument("--gate-config", default=None,
+                    help="게이트 설정 JSON 경로 (기본: gate_config.json 자동 탐색)")
     ap.add_argument("--enroll-text", default="결재 부탁드립니다")
     ap.add_argument("--enroll-sec", type=float, default=4.0)
     ap.add_argument("--no-calibrate", action="store_true", help="발화 게이트 캘리브레이션 생략")
@@ -620,6 +653,13 @@ def main():
     beam_size    = int(_pick(args.beam_size, "beam_size", 1))
     vad_filter   = bool(_pick(args.vad_filter, "vad_filter", False))
 
+    # ── 게이트 설정 해석: CLI > gate_config.json > 기본값 ──
+    _gcfg, _gpath = load_gate_config(args.gate_config)
+    if args.gate_margin is None:
+        args.gate_margin = float(_gcfg.get("gate_margin", 2.6))
+    over_frac = args.over_frac if args.over_frac is not None \
+        else float(_gcfg.get("over_frac", 0.15))
+
     if not args.no_speech:
         if _cfg_path:
             print(f"[stt] 설정 파일 적용: {_cfg_path}", flush=True)
@@ -629,10 +669,16 @@ def main():
         print(f"[stt] size={whisper_size} compute={compute_type} "
               f"beam={beam_size} vad_filter={vad_filter}  (CLI>config>기본)",
               flush=True)
+        if _gpath:
+            print(f"[gate] 설정 파일 적용: {_gpath} → margin={args.gate_margin} "
+                  f"over_frac={over_frac}", flush=True)
+        else:
+            print(f"[gate] gate_config.json 없음 → margin={args.gate_margin} "
+                  f"over_frac={over_frac} (기본/CLI, gate_tuner.py 로 생성 가능)", flush=True)
 
     stop_evt = threading.Event()
     recalib_req = threading.Event()
-    gate = {"upper": float("inf")}
+    gate = {"upper": float("inf"), "over_frac": over_frac}
     sigh_q = queue.Queue()
     speech_q = queue.Queue()
     utter_q = queue.Queue()
@@ -656,7 +702,7 @@ def main():
         threads.append(threading.Thread(
             target=speech_process_loop,
             args=(utter_q, stop_evt, whisper_size, args.threads, args.min_chars),
-            kwargs=dict(compute_type=compute_type),
+            kwargs=dict(compute_type=compute_type, over_frac_thr=over_frac),
             daemon=True))
         threads.append(threading.Thread(
             target=recalib_poller, args=(stop_evt, recalib_req), daemon=True))
