@@ -28,7 +28,7 @@ mic_agent.py
 의존성:
   pip install sounddevice webrtcvad numpy
   # 한숨:   pip install tflite-runtime   (+ model/yamnet.tflite, model/yamnet_class_map.csv)
-  # 발화:   pip install faster-whisper transformers torch kobert-transformers sentencepiece noisereduce
+  # 발화:   pip install faster-whisper transformers torch kobert-transformers sentencepiece 
   # sudo apt install libportaudio2
 ────────────────────────────────────────────────────────────────
 """
@@ -38,7 +38,6 @@ import collections
 import csv
 import json
 import os
-import json
 import queue
 import sys
 import threading

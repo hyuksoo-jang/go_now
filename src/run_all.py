@@ -164,7 +164,7 @@ def main():
 
     # ── 사전 점검 모드: check_devices.py 로 위임하고 종료 ──
     if role == "check":
-        cmd = [PYTHON, "check_devices.py", a["cam_idx"]]
+        cmd = [PYTHON, "./setup/checker/check_devices.py", a["cam_idx"]]
         if a["device"] is not None:
             cmd += ["--device", str(a["device"])]
         _log("run", "장치 사전 점검 시작 (check_devices.py)...")

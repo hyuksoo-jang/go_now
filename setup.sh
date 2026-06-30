@@ -8,8 +8,9 @@
 #
 # 하는 일:
 #   1) 시스템 패키지(apt): PortAudio / 한글폰트 / ffmpeg 등
-#   2) pip 패키지: 역할에 맞는 requirements 설치
-#   3) 모델: face_landmarker.task(cam, 선택) 다운로드 + YAMNet 모델 확인(mic)
+#   2) pip 패키지: 역할에 맞는 requirements 설치 (루트의 requirements*.txt)
+#   3) 모델: face_landmarker.task(cam, 선택) → src/setup/ 다운로드
+#            YAMNet 모델(mic) → src/model/ 존재 확인
 #
 # 가상환경을 쓴다면 먼저 활성화하고 실행하세요:
 #   source /path/to/venv/bin/activate && ./setup.sh all
@@ -23,6 +24,7 @@ case "$ROLE" in
 esac
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
+SRC="$HERE/src"
 PY="${PYTHON:-python3}"
 
 echo "=================================================="
@@ -62,13 +64,14 @@ if [[ "$ROLE" == "mic" || "$ROLE" == "all" ]]; then
 fi
 
 # ── 3) 모델 파일 ─────────────────────────────────────────────
-# (cam) face_landmarker.task — 표정 정확도 향상(선택). 없으면 다운로드.
+# (cam) face_landmarker.task — 표정 정확도 향상(선택). 없으면 src/setup/ 에 다운로드.
 if [[ "$ROLE" == "cam" || "$ROLE" == "all" ]]; then
-  TASK="$HERE/face_landmarker.task"
+  TASK="$SRC/setup/face_landmarker.task"
   if [[ -f "$TASK" ]]; then
     echo ">> face_landmarker.task 이미 있음 (skip)"
   else
-    echo ">> face_landmarker.task 다운로드(선택, 표정 정확도 향상)"
+    echo ">> face_landmarker.task 다운로드(선택, 표정 정확도 향상) → src/setup/"
+    mkdir -p "$(dirname "$TASK")"
     URL="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
     if command -v wget >/dev/null 2>&1; then
       wget -q -O "$TASK" "$URL" || echo "   ⚠ 다운로드 실패(선택 항목이라 무시 가능)"
@@ -80,15 +83,15 @@ if [[ "$ROLE" == "cam" || "$ROLE" == "all" ]]; then
   fi
 fi
 
-# (mic) YAMNet — 한숨 감지에 필수. 자동 다운로드 대신 존재 확인만.
+# (mic) YAMNet — 한숨 감지에 필수. 자동 다운로드 대신 존재 확인만. (src/model/)
 if [[ "$ROLE" == "mic" || "$ROLE" == "all" ]]; then
   MISSING=()
-  [[ -f "$HERE/model/yamnet.tflite" ]]        || MISSING+=("model/yamnet.tflite")
-  [[ -f "$HERE/model/yamnet_class_map.csv" ]] || MISSING+=("model/yamnet_class_map.csv")
+  [[ -f "$SRC/model/yamnet.tflite" ]]        || MISSING+=("src/model/yamnet.tflite")
+  [[ -f "$SRC/model/yamnet_class_map.csv" ]] || MISSING+=("src/model/yamnet_class_map.csv")
   if ((${#MISSING[@]})); then
     echo ">> ⚠ YAMNet 모델 누락: ${MISSING[*]}"
-    echo "   한숨 감지에 필요합니다. 기존 sigh_detector 셋업(setup_mode_a.sh)에서 받은 파일을"
-    echo "   model/ 폴더에 두거나, 없으면 mic_agent 를 --no-sigh 로 실행하세요."
+    echo "   한숨 감지에 필요합니다. 기존 sigh_detector 셋업에서 받은 파일을"
+    echo "   src/model/ 폴더에 두거나, 없으면 mic_agent 를 --no-sigh 로 실행하세요."
   else
     echo ">> YAMNet 모델 확인 완료"
   fi
@@ -96,9 +99,9 @@ fi
 
 echo "=================================================="
 echo "  설치 완료 (role=$ROLE)"
-echo "  실행 예:"
-[[ "$ROLE" == "all" ]] && echo "    python3 run_all.py --role all 0 --device 1"
-[[ "$ROLE" == "cam" ]] && echo "    python3 run_all.py --role cam 0"
-[[ "$ROLE" == "mic" ]] && echo "    python3 run_all.py --role mic --radar-host <cam_IP> --device 1"
-echo "  설치 점검:  python3 check_devices.py"
+echo "  실행 예 (src/ 에서 실행):"
+[[ "$ROLE" == "all" ]] && echo "    cd src && python3 run_all.py --role all 0 --device 1"
+[[ "$ROLE" == "cam" ]] && echo "    cd src && python3 run_all.py --role cam 0"
+[[ "$ROLE" == "mic" ]] && echo "    cd src && python3 run_all.py --role mic --radar-host <cam_IP> --device 1"
+echo "  설치 점검:  python3 src/setup/checker/check_devices.py"
 echo "=================================================="
