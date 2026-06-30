@@ -1,4 +1,4 @@
-# 지금 갈까요? — 결재 레이더
+# 지금 갈까요? — Go NOW?
 
 라즈베리파이 5 기반 **감정 신호등** 시스템. 팀장의 **표정**(카메라) + **한숨/발화**(마이크)를
 종합해 "지금 결재받으러 가도 되는가"를 1·5·10분 구간의 신호등(🔴/🟡/🟢)으로 알려줍니다.
@@ -79,6 +79,8 @@ go_now/
 ├── requirements.txt              # 통합(= -r cam + -r mic)
 ├── requirements-cam.txt          # cam 전용 의존성
 ├── requirements-mic.txt          # mic 전용 의존성
+├── .coverage                     # coverage 임시 db
+├── .coveragerc                   # coverage 설정 파일
 │
 ├── src/                          # 애플리케이션 소스
 │   ├── run_all.py                # 진입점 (역할별 기동)
@@ -112,18 +114,22 @@ go_now/
 │           └── gate_tuner.py     #   발화 게이트 튜닝
 │
 ├── tests/                        # pytest 단위 테스트
+│   ├── run_tests.sh
 │   ├── conftest.py
 │   ├── test_config.py
+│   ├── test_go_now_v2.py
 │   ├── test_mic_agent.py
 │   ├── test_model.py
+│   ├── test_open_camera_patch.py
 │   ├── test_outlook_sync.py
+│   ├── test_run_all.py
+│   ├── __init__.py
 │   └── test_radar_signal_processor.py
 │
 ├── test-results/                 # 테스트 산출물 (coverage·junit·report)
 │   ├── coverage.xml
 │   ├── junit.xml
-│   ├── report.html
-│   └── test_log.txt
+│   └── report.html
 │
 └── output/                       # 산출 문서
     └── LG_부트캠프_13기_B반_요구사항_명세서(1팀).md
