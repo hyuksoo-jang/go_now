@@ -1,6 +1,6 @@
 import sys, os, json, pytest
 
-WS = os.path.join(os.path.dirname(__file__), '..', 'go_now_ws')
+WS = os.path.join(os.path.dirname(__file__), '..', 'src')
 sys.path.insert(0, os.path.abspath(WS))
 
 @pytest.fixture

@@ -2,7 +2,7 @@ import sys, os, json, tempfile
 from datetime import datetime, timezone, timedelta, date
 from unittest.mock import patch, MagicMock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'go_now_ws'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
 class TestToNaiveKst:
