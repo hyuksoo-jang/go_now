@@ -1,7 +1,7 @@
 import sys, os, time, threading
 import pytest
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'go_now_ws'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
 # ─────────────────────────────────────────────────────────────

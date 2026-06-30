@@ -1,0 +1,21 @@
+[run]
+source = src
+branch = True
+omit =
+    src/__pycache__/*
+    src/setup/*
+    src/go_now_v2.py
+    src/patch_dashboard.py
+    src/open_camera_patch.py
+    src/run_all.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    \.\.\.
+
+[html]
+directory = test-results/coverage_html
+title     = Go Now Coverage Report (B반 1팀)
