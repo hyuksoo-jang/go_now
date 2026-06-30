@@ -767,10 +767,12 @@ def api_radar_add_speech_emotion():
         data = request.get_json(force=True)
         emotion = data.get("emotion", "")
         timestamp = data.get("timestamp", None)
+        probs = data.get("probs")
+        top_prob = data.get("top_prob")
         if not emotion:
             return jsonify({"error": "emotion required"}), 400
         radar = get_processor()
-        radar.add_speech_emotion(emotion, timestamp)
+        radar.add_speech_emotion(emotion, timestamp, probs=probs, top_prob=top_prob)
         return jsonify({"ok": True, "emotion": emotion})
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
