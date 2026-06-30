@@ -97,10 +97,14 @@ class TestConstants:
         from radar_signal_processor import WINDOWS
         assert WINDOWS == {"1m": 60, "5m": 300, "10m": 600}
 
-    def test_R01_neg_threshold_values(self):
-        """NEG_THRESHOLD: 1m→1, 5m→2, 10m→3"""
-        from radar_signal_processor import NEG_THRESHOLD
-        assert NEG_THRESHOLD == {"1m": 1, "5m": 2, "10m": 3}
+    def test_R01_default_weights_config_keys(self):
+        """DEFAULT_WEIGHTS_CONFIG 필수 키 존재 및 기본값 확인"""
+        from radar_signal_processor import DEFAULT_WEIGHTS_CONFIG
+        for key in ("emotion_weights", "min_conf", "happy_gate",
+                    "w_face", "w_speech", "anger_hard_th", "red_th", "green_th"):
+            assert key in DEFAULT_WEIGHTS_CONFIG
+        assert "기쁨" in DEFAULT_WEIGHTS_CONFIG["emotion_weights"]
+        assert DEFAULT_WEIGHTS_CONFIG["red_th"] > DEFAULT_WEIGHTS_CONFIG["green_th"]
 
     def test_R01_positive_emotions_only_joy(self):
         """긍정 감정은 기쁨 1종"""
@@ -306,14 +310,15 @@ class TestSignalPriority:
         result = p._decide_window("1m")
         assert result["signal"] == "green"
 
-    def test_R01_rule3_neg_speech_1m_red(self):
-        """규칙 3: 1분 구간 부정 발화 1회 이상 → 빨강"""
+    def test_R01_rule3_score_based_red(self):
+        """규칙 3: 위험점수 R >= red_th → 빨강 (score reason)
+        분노 50%(anger_hard_th=60% 미만) + 발화 없음 → R=face_risk=0.5=red_th → red"""
         p = self._proc_with_data(
-            expressions=["일반"] * 10,
-            neg_emotions=1
+            expressions=["분노"] * 5 + ["일반"] * 5,
         )
         result = p._decide_window("1m")
         assert result["signal"] == "red"
+        assert result["reason"] == "score"
 
     def test_R01_rule4_default_yellow(self):
         """규칙 4: 기본값 → 노랑"""
@@ -443,3 +448,301 @@ class TestSingleton:
         monkeypatch.setattr(radar_signal_processor, '_proc_lock', MockLock())
         result = radar_signal_processor.get_processor()
         assert result is existing
+# ─────────────────────────────────────────────────────────────
+class TestLoadWeightsConfig:
+    """R01: load_weights_config 다양한 경로 브랜치 커버"""
+
+    def test_R01_explicit_path_used(self, tmp_path):
+        """explicit 경로로 파일 찾기 → cfg 반환 + 경로 확인"""
+        import json as _json
+        from radar_signal_processor import load_weights_config, DEFAULT_WEIGHTS_CONFIG
+        cfg_file = tmp_path / "weights_config.json"
+        cfg_file.write_text(_json.dumps({
+            "emotion_weights": {"분노": 0.9, "기쁨": -0.5},
+            "red_th": 0.4
+        }), encoding="utf-8")
+        cfg, path = load_weights_config(explicit=str(cfg_file))
+        assert path == str(cfg_file)
+        assert cfg["red_th"] == 0.4
+        assert cfg["emotion_weights"]["분노"] == 0.9
+
+    def test_R01_seen_dedup_continue(self, tmp_path, monkeypatch):
+        """explicit == CWD 경로 → seen 중복 → continue 브랜치"""
+        import json as _json
+        from radar_signal_processor import load_weights_config
+        # CWD를 tmp_path로 변경 (weights_config.json 없음)
+        monkeypatch.chdir(tmp_path)
+        # explicit = CWD path → 두 번째 같은 경로는 seen에서 continue
+        cwd_path = str(tmp_path / "weights_config.json")
+        # 파일 없어도 목적은 seen dedup 커버
+        cfg, path = load_weights_config(explicit=cwd_path)
+        # 경로 없으므로 None이거나 다른 경로
+        assert cfg is not None
+
+    def test_R01_no_emotion_weights_key_in_json(self, tmp_path, monkeypatch):
+        """JSON에 emotion_weights 없음 → scalar 키만 반영"""
+        import json as _json
+        from radar_signal_processor import load_weights_config, DEFAULT_WEIGHTS_CONFIG
+        monkeypatch.chdir(tmp_path)
+        cfg_file = tmp_path / "weights_config.json"
+        cfg_file.write_text(_json.dumps({"red_th": 0.6}), encoding="utf-8")
+        cfg, path = load_weights_config()
+        # emotion_weights는 DEFAULT 유지, scalar만 덮어쓰기
+        assert cfg["red_th"] == 0.6
+        assert cfg["emotion_weights"] == DEFAULT_WEIGHTS_CONFIG["emotion_weights"]
+
+    def test_R01_null_scalar_skipped(self, tmp_path, monkeypatch):
+        """null scalar 키 → 덮어쓰지 않음 (default 유지)"""
+        import json as _json
+        from radar_signal_processor import load_weights_config, DEFAULT_WEIGHTS_CONFIG
+        monkeypatch.chdir(tmp_path)
+        cfg_file = tmp_path / "weights_config.json"
+        cfg_file.write_text(_json.dumps({"red_th": None, "green_th": -0.2}),
+                            encoding="utf-8")
+        cfg, path = load_weights_config()
+        assert cfg["red_th"] == DEFAULT_WEIGHTS_CONFIG["red_th"]  # null → 유지
+        assert cfg["green_th"] == -0.2  # non-null → 덮어쓰기
+
+    def test_R01_bad_json_exception_fallback(self, tmp_path, monkeypatch):
+        """bad JSON → exception catch → 다음 후보 or return cfg, None"""
+        from radar_signal_processor import load_weights_config, DEFAULT_WEIGHTS_CONFIG
+        monkeypatch.chdir(tmp_path)
+        bad_file = tmp_path / "weights_config.json"
+        bad_file.write_text("{ this is not json }", encoding="utf-8")
+        # 예외 후 다른 후보도 없으면 default 반환
+        cfg, path = load_weights_config()
+        # path는 None (모든 후보 실패)이거나 src/ 것일 수 있음
+        assert cfg is not None
+        assert "emotion_weights" in cfg
+
+    def test_R01_no_config_returns_default(self, tmp_path, monkeypatch):
+        """어디서도 weights_config.json 없음 → return cfg, None"""
+        import os
+        from radar_signal_processor import load_weights_config, DEFAULT_WEIGHTS_CONFIG
+        monkeypatch.chdir(tmp_path)
+        with pytest.MonkeyPatch().context() as m:
+            m.setattr("os.path.exists", lambda p: False)
+            cfg, path = load_weights_config()
+        assert path is None
+        assert cfg["red_th"] == DEFAULT_WEIGHTS_CONFIG["red_th"]
+
+
+# ─────────────────────────────────────────────────────────────
+# speech_utterance_risk 세부 브랜치 커버
+# ─────────────────────────────────────────────────────────────
+class TestSpeechUtteranceRisk:
+    """R01: speech_utterance_risk 함수 브랜치 커버"""
+
+    def test_R01_default_weights_when_none(self):
+        """weights=None → DEFAULT_WEIGHTS_CONFIG 사용"""
+        from radar_signal_processor import speech_utterance_risk, DEFAULT_WEIGHTS_CONFIG
+        r = speech_utterance_risk({"분노": 1.0}, top_prob=1.0, weights=None)
+        expected = DEFAULT_WEIGHTS_CONFIG["emotion_weights"]["분노"]
+        assert abs(r - expected) < 0.01
+
+    def test_R01_top_prob_computed_from_probs(self):
+        """top_prob=None → max(probs.values()) 자동 계산"""
+        from radar_signal_processor import speech_utterance_risk
+        # top_prob=None + probs non-empty → 내부에서 max 계산
+        r = speech_utterance_risk({"분노": 0.9, "기쁨": 0.1}, top_prob=None)
+        assert r > 0
+
+    def test_R01_empty_probs_top_prob_zero(self):
+        """top_prob=None + probs 빈 dict → top_prob=0.0"""
+        from radar_signal_processor import speech_utterance_risk
+        r = speech_utterance_risk({}, top_prob=None)
+        assert r == 0.0
+
+    def test_R01_low_conf_attenuation(self):
+        """top_prob < min_conf → r 감쇠 (r *= top_prob/min_conf)"""
+        from radar_signal_processor import speech_utterance_risk
+        # top_prob=0.3 < min_conf=0.45 → 감쇠 적용
+        r_attenuated = speech_utterance_risk({"분노": 1.0}, top_prob=0.3, min_conf=0.45)
+        r_full = speech_utterance_risk({"분노": 1.0}, top_prob=1.0, min_conf=0.45)
+        assert r_attenuated < r_full
+
+    def test_R01_happy_gate_skips_joy(self):
+        """기쁨 확신도 < happy_gate → 기쁨 기여 0"""
+        from radar_signal_processor import speech_utterance_risk
+        # 기쁨 0.5 < happy_gate=0.70 → 기쁨 가중치 미적용
+        r_no_gate = speech_utterance_risk({"기쁨": 0.5}, top_prob=0.5, happy_gate=0.3)
+        r_with_gate = speech_utterance_risk({"기쁨": 0.5}, top_prob=0.5, happy_gate=0.70)
+        # gate 적용 시 기쁨 기여 없음 → r=0
+        assert r_with_gate == 0.0
+
+    def test_R01_happy_above_gate_contributes(self):
+        """기쁨 확신도 >= happy_gate → 음수 기여"""
+        from radar_signal_processor import speech_utterance_risk
+        r = speech_utterance_risk({"기쁨": 0.9}, top_prob=0.9, happy_gate=0.70)
+        assert r < 0  # 기쁨 weight = -0.6
+
+
+# ─────────────────────────────────────────────────────────────
+# RadarSignalProcessor 신규 기능 커버
+# ─────────────────────────────────────────────────────────────
+class TestRadarSignalProcessorNewFeatures:
+    """R01: 신규 기능 (no-config print, reload, probs speech) 커버"""
+
+    def test_R01_no_config_prints_default_message(self, capsys):
+        """weights_config.json 없을 때 '기본 가중치' 메시지 출력"""
+        from radar_signal_processor import RadarSignalProcessor
+        from unittest.mock import patch
+        with patch("os.path.exists", return_value=False):
+            p = RadarSignalProcessor()
+        out = capsys.readouterr().out
+        assert "기본 가중치" in out
+
+    def test_R01_reload_weights_returns_path(self, tmp_path):
+        """reload_weights() → 경로 반환"""
+        import json as _json
+        from radar_signal_processor import RadarSignalProcessor
+        cfg_file = tmp_path / "weights_config.json"
+        cfg_file.write_text(_json.dumps({"red_th": 0.4}), encoding="utf-8")
+        p = RadarSignalProcessor()
+        path = p.reload_weights(weights_config=str(cfg_file))
+        assert path == str(cfg_file)
+        assert p.cfg["red_th"] == 0.4
+
+    def test_R01_reload_weights_updates_cfg(self, tmp_path):
+        """reload_weights() 후 cfg와 weights 갱신"""
+        import json as _json
+        from radar_signal_processor import RadarSignalProcessor
+        cfg_file = tmp_path / "w.json"
+        cfg_file.write_text(_json.dumps({
+            "emotion_weights": {"분노": 2.0, "기쁨": -1.0,
+                                "슬픔": 0.2, "불안": 0.7, "당황": 0.5, "상처": 0.3}
+        }), encoding="utf-8")
+        p = RadarSignalProcessor()
+        p.reload_weights(weights_config=str(cfg_file))
+        assert p.weights["분노"] == 2.0
+
+    def test_R01_add_speech_with_probs_stores_risk(self):
+        """add_speech_emotion(probs=...) → risk 계산 후 dict 저장"""
+        from radar_signal_processor import RadarSignalProcessor
+        p = RadarSignalProcessor()
+        p.add_speech_emotion("분노",
+                             probs={"분노": 0.8, "슬픔": 0.1, "기쁨": 0.05,
+                                    "불안": 0.02, "당황": 0.02, "상처": 0.01},
+                             top_prob=0.8)
+        items = p.speech_buffer.get_window(10)
+        assert len(items) == 1
+        stored = items[0][1]
+        assert isinstance(stored, dict)
+        assert stored["emotion"] == "분노"
+        assert "risk" in stored
+        assert stored["risk"] > 0
+
+    def test_R01_add_speech_explicit_risk_skips_calc(self):
+        """add_speech_emotion(risk=0.5) → 계산 없이 저장"""
+        from radar_signal_processor import RadarSignalProcessor
+        p = RadarSignalProcessor()
+        p.add_speech_emotion("슬픔", risk=0.5)
+        items = p.speech_buffer.get_window(10)
+        assert items[0][1]["risk"] == 0.5
+
+    def test_R01_add_speech_top_prob_stored(self):
+        """add_speech_emotion(top_prob=0.8) → top_prob dict에 저장"""
+        from radar_signal_processor import RadarSignalProcessor
+        p = RadarSignalProcessor()
+        p.add_speech_emotion("분노",
+                             probs={"분노": 0.8}, top_prob=0.8)
+        stored = p.speech_buffer.get_window(10)[0][1]
+        assert stored["top_prob"] == 0.8
+
+
+# ─────────────────────────────────────────────────────────────
+# _decide_window 추가 브랜치 커버
+# ─────────────────────────────────────────────────────────────
+class TestDecideWindowExtra:
+    """R01: _decide_window 미커버 브랜치 (legacy string, R-score red) 커버"""
+
+    def _proc_base(self, n_expr=10, emotion="일반"):
+        from radar_signal_processor import RadarSignalProcessor
+        p = RadarSignalProcessor()
+        now = time.time()
+        for i in range(n_expr):
+            p.add_expression(emotion, now - 50 + i)
+        return p, now
+
+    def test_R01_positive_speech_no_neg_count(self):
+        """기쁨 발화(dict) → neg_count 증가 없음 (291→288 브랜치)"""
+        from radar_signal_processor import RadarSignalProcessor
+        p, now = self._proc_base()
+        p.add_speech_emotion("기쁨",
+                             probs={"기쁨": 0.9}, top_prob=0.9,
+                             timestamp=now - 5)
+        result = p._decide_window("1m")
+        assert result["neg_count"] == 0
+
+    def test_R01_negative_speech_dict_increments_neg_count(self):
+        """부정 발화(dict) → neg_count 증가 (line 292 브랜치)"""
+        from radar_signal_processor import RadarSignalProcessor
+        p, now = self._proc_base()
+        p.add_speech_emotion("분노",
+                             probs={"분노": 0.8}, top_prob=0.8,
+                             timestamp=now - 5)
+        result = p._decide_window("1m")
+        assert result["neg_count"] == 1
+
+    def test_R01_legacy_string_speech_in_buffer(self):
+        """과도기: speech_buffer에 문자열 직접 저장 → 294-298 브랜치"""
+        from radar_signal_processor import RadarSignalProcessor
+        p, now = self._proc_base()
+        # 구 버전 호환: 문자열 직접 삽입 (일반 API 우회)
+        p.speech_buffer.add("슬픔", now - 5)
+        result = p._decide_window("1m")
+        assert result["neg_count"] >= 1
+
+    def test_R01_legacy_positive_string_no_neg_count(self):
+        """과도기: 기쁨 문자열 → neg_count 증가 없음"""
+        from radar_signal_processor import RadarSignalProcessor
+        p, now = self._proc_base()
+        p.speech_buffer.add("기쁨", now - 5)
+        result = p._decide_window("1m")
+        assert result["neg_count"] == 0
+
+    def test_R01_red_via_score_not_hard_rule(self):
+        """R >= red_th 이면서 anger_hard_th 미만 → red reason=score (line 320)"""
+        from radar_signal_processor import RadarSignalProcessor
+        p = RadarSignalProcessor()
+        now = time.time()
+        # 분노 50% (< anger_hard_th=0.6) + 발화 없음 → face_risk=0.5, R=0.5=red_th
+        for i in range(5):
+            p.add_expression("분노", now - 50 + i)
+        for i in range(5):
+            p.add_expression("일반", now - 45 + i)
+        result = p._decide_window("1m")
+        assert result["signal"] == "red"
+        assert result["reason"] == "score"
+
+    def test_R01_green_via_score(self):
+        """R <= green_th → green reason=score"""
+        from radar_signal_processor import RadarSignalProcessor
+        p = RadarSignalProcessor()
+        now = time.time()
+        # 행복 100% → face_risk = _clamp(0 - 1.0, -1, 1) = -1.0, R=-1.0 <= -0.3 → green
+        for i in range(10):
+            p.add_expression("행복", now - 50 + i)
+        result = p._decide_window("1m")
+        assert result["signal"] == "green"
+        assert result["reason"] == "score"
+
+    def test_R01_get_all_signals_has_thresholds(self):
+        """get_all_signals → thresholds 키 포함"""
+        from radar_signal_processor import RadarSignalProcessor
+        p = RadarSignalProcessor()
+        out = p.get_all_signals()
+        assert "thresholds" in out
+        for k in ("red_th", "green_th", "anger_hard_th", "w_face", "w_speech"):
+            assert k in out["thresholds"]
+
+    def test_R01_decide_window_new_keys(self):
+        """_decide_window 반환값에 신규 키 포함"""
+        from radar_signal_processor import RadarSignalProcessor
+        p = RadarSignalProcessor()
+        now = time.time()
+        for i in range(10):
+            p.add_expression("일반", now - 50 + i)
+        result = p._decide_window("1m")
+        for key in ("risk", "face_risk", "speech_risk", "reason", "ready"):
+            assert key in result, f"'{key}' 키 없음"
