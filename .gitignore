@@ -5,5 +5,4 @@ __pycache__/
 # 커버리지 / 테스트 산출물
 .coverage
 .coverage.*
-test-results/
 htmlcov/

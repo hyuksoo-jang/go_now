@@ -1,5 +1,7 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+# 스크립트 위치와 무관하게 항상 프로젝트 루트에서 실행
+# (tests/ 안에 두어도 tests/ · src · .coveragerc · test-results/ 경로가 그대로 맞음)
+cd "$(dirname "$0")/.."
 
 PYTHON=${PYTHON:-/home/willtek/work/env/bin/python}
 
