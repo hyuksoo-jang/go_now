@@ -51,7 +51,8 @@ except Exception as e:
 print()
 
 # ── Coverage ───────────────────────────────
-TARGET = ['mic_agent', 'radar_signal_processor', 'outlook_sync']
+TARGET = ['mic_agent', 'radar_signal_processor', 'outlook_sync',
+          'go_now_v2', 'open_camera_patch', 'run_all']
 try:
     tree  = ET.parse('test-results/coverage.xml')
     root  = tree.getroot()

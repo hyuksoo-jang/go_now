@@ -3,9 +3,11 @@ import numpy as np
 from unittest.mock import MagicMock, patch
 
 # 하드웨어 의존 모듈 모킹
+# 주의: 무조건 MagicMock 으로 덮어쓴다. (sounddevice 는 mediapipe 등이 실제 모듈을
+# sys.modules 에 먼저 올릴 수 있어, 조건부 모킹 시 테스트 실행 순서에 따라
+# 실제 하드웨어 모듈이 새어 들어와 audio_supervisor 분기 커버리지가 흔들린다.)
 for _mod in ['sounddevice', 'webrtcvad']:
-    if _mod not in sys.modules:
-        sys.modules[_mod] = MagicMock()
+    sys.modules[_mod] = MagicMock()
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
