@@ -5,5 +5,53 @@
     "time": "12:00",
     "title": "회의",
     "note": ""
+  },
+  {
+    "id": "a2d2c8fa-b3ce-4281-b977-ffad3e0b0772",
+    "date": "2026-06-26",
+    "time": "10:00",
+    "title": "긴급 회의",
+    "note": "장소: W7동 708호 회의실",
+    "_outlook": true
+  },
+  {
+    "id": "7e9167a2-8061-4f3b-a303-4494547bab1a",
+    "date": "2026-06-26",
+    "time": "14:00",
+    "title": "회의",
+    "note": "",
+    "_outlook": true
+  },
+  {
+    "id": "bea37dad-a499-4e18-8500-f77db8916b8e",
+    "date": "2026-06-29",
+    "time": "10:00",
+    "title": "오전 회의",
+    "note": "",
+    "_outlook": true
+  },
+  {
+    "id": "936c06ab-868c-474c-9066-2b65faba8a1f",
+    "date": "2026-06-29",
+    "time": "12:00",
+    "title": "점심 회식",
+    "note": "",
+    "_outlook": true
+  },
+  {
+    "id": "6c378c6b-d350-479b-8e5f-920927b51f0b",
+    "date": "2026-06-29",
+    "time": "15:00",
+    "title": "오후 회의",
+    "note": "",
+    "_outlook": true
+  },
+  {
+    "id": "e99523a3-0440-4d6d-9cfd-e658812769c0",
+    "date": "2026-06-29",
+    "time": "18:00",
+    "title": "긴급 회의",
+    "note": "",
+    "_outlook": true
   }
 ]

@@ -877,11 +877,8 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
       {id:'d1',date:t,time:'09:30',title:'주간 회의',note:''},
       {id:'d2',date:t,time:'15:00',title:'1on1',note:''}
     ];
-    if(!apData.length) apData=[
-      {id:'a1',date:t,title:'마케팅 예산 집행',note:'2,400만원 · 오늘 마감 긴급'},
-      {id:'a2',date:t,title:'외주 계약서 검토',note:'850만원'},
-      {id:'a3',date:t,title:'연차 신청서',note:''}
-    ];
+    // 결재 항목은 하드코딩하지 않음 — approval_data.json (/api/approvals) 에서 로드.
+    // 백엔드 연결 시 파일 데이터가 그대로 표시되고, 오프라인 미리보기에서는 비어 있음.
     var w=curWindow();
     if(w!=='realtime'){
       lastStatus={signal:'measuring',window:w};
