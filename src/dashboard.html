@@ -332,7 +332,35 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
 .btn-vcalib{background:#0d3a2a; color:#34c759; border:1px solid #1a5c40; border-radius:8px; margin-top:0; width:100%; padding:8px; font-size:.82rem; cursor:pointer; transition:.15s; font-family:inherit}
 .btn-vcalib:hover{background:#1a5c40}
 .btn-vcalib:disabled{opacity:.5; cursor:default}
-</style>
+
+/* ───────── 현재 감정 강조 ───────── */
+.mood-card{position:relative; overflow:visible; border-color:var(--state); transition:border-color .5s, box-shadow .5s; box-shadow:0 0 0 1px var(--state-soft), inset 0 0 22px var(--state-soft)}
+.mood-card .mood-main{display:flex; align-items:center; gap:13px; margin-top:5px}
+.mood-emoji{font-size:2.5rem; line-height:1; flex:0 0 auto; transition:transform .35s; filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))}
+.mood-card.pulse .mood-emoji{animation:moodpop .5s ease}
+@keyframes moodpop{0%{transform:scale(.6)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+.mood-textwrap{min-width:0}
+.mood-card .big{font-size:1.55rem; font-weight:800; color:var(--state); transition:color .5s; line-height:1.1}
+.mood-card .big.tag-warn{color:var(--orange)} .mood-card .big.tag-bad{color:var(--red)} .mood-card .big.tag-good{color:var(--green)}
+.mood-float{
+  position:absolute; left:14px; top:-13px; z-index:6;
+  display:inline-flex; align-items:center; gap:5px;
+  background:var(--state); color:#0d1117;
+  font-size:.66rem; font-weight:800; letter-spacing:.3px;
+  padding:4px 10px; border-radius:999px; white-space:nowrap;
+  box-shadow:0 4px 12px rgba(0,0,0,.4);
+  animation:moodbob 2.2s ease-in-out infinite;
+  transition:background .5s;
+}
+.mood-float .mf-ico{font-size:.85rem; line-height:1}
+.mood-float::after{
+  content:""; position:absolute; left:18px; bottom:-5px;
+  width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent;
+  border-top:6px solid var(--state); transition:border-top-color .5s;
+}
+@keyframes moodbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes gbuoybob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,-5px)}}
+@media (prefers-reduced-motion:reduce){.mood-float{animation:none} .mood-card.pulse .mood-emoji{animation:none}}</style>
 </head>
 <body>
 
@@ -415,10 +443,15 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
 
     <div class="jb-right">
       <div class="stat-row stat-row-3">
-        <div class="stat-card">
+        <div class="stat-card mood-card" id="mood-card">
           <div class="lab">&#128566; 현재 상태</div>
-          <div class="big" id="r-mood">&#8211;</div>
-          <div class="sub" id="r-mood-sub">표정·음성 종합</div>
+          <div class="mood-main">
+            <span class="mood-emoji" id="mood-emoji">&#8211;</span>
+            <div class="mood-textwrap">
+              <div class="big" id="r-mood">&#8211;</div>
+              <div class="sub" id="r-mood-sub">표정·음성 종합</div>
+            </div>
+          </div>
         </div>
         <div class="stat-card">
           <div class="lab">&#9201; 추천 타이밍</div>
@@ -482,7 +515,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
   <div class="panel" data-panel="analysis">
     <div class="pn" style="flex:1;min-height:0;overflow:auto">
       <div class="pt"><span>&#128202; 상세 원인 분석</span><span class="badge" id="anz-updated"></span></div>
-      <div style="font-size:.78rem;color:var(--tx2);margin-bottom:10px;line-height:1.5">각 구간(1·5·10분)의 신호등이 알고리즘에서 어떻게 결정됐는지 단계별로 보여줍니다. 우선순위: ① 한숨 → ② 표정 대표값 → ③ 발화 부정 개수 → ④ 기본값(초록). 굵게 표시된 단계에서 신호가 확정됩니다.</div>
+      <div style="font-size:.78rem;color:var(--tx2);margin-bottom:10px;line-height:1.5">각 구간(1·5·10분)의 신호가 어떻게 결정됐는지 보여줍니다. ① 한숨 또는 강한 분노 표정이면 점수와 무관하게 즉시 <b style="color:var(--red)">빨강</b>(하드 오버라이드), 그 외에는 표정·발화를 합친 <b>위험점수 R</b> 로 판정합니다. <b>R ≥ red_th → 빨강 / R ≤ green_th → 초록 / 그 외 → 노랑.</b></div>
       <div id="anz-cards"></div>
     </div>
   </div>
@@ -631,6 +664,24 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     document.body.classList.toggle('emg-mode',which==='r');
     document.body.setAttribute('data-signal', which==='r'?'red':(which==='o'?'orange':'green'));
   }
+  // 현재 감정: 큰 이모지 + 따라다니는 라벨 아이콘 갱신
+  var _lastMoodFace='';
+  function setMoodFace(emo, signal, mismatch, measuring, absent){
+    var face='🙂';
+    if(measuring) face='⏳';
+    else if(absent) face='🚪';
+    else if(signal==='red'||emo==='분노') face='😠';
+    else if(mismatch) face='😬';
+    else if(emo==='행복') face='😄';
+    else face='🙂';
+    var em=document.getElementById('mood-emoji'); if(em) em.textContent=face;
+    var fi=document.getElementById('mf-ico'); if(fi) fi.textContent=face;
+    var card=document.getElementById('mood-card');
+    if(card && face!==_lastMoodFace){           // 감정이 바뀔 때만 팝 애니메이션
+      card.classList.remove('pulse'); void card.offsetWidth; card.classList.add('pulse');
+    }
+    _lastMoodFace=face;
+  }
   function showMeasuring(win){
     ['r','o','g'].forEach(function(k){var el=document.getElementById('lamp-'+k);if(el){el.classList.remove('on');el.classList.add('off');}});
     var tw=document.getElementById('tower'); if(tw) tw.classList.remove('mm');
@@ -642,8 +693,9 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     document.getElementById('v-lvl').textContent='측정중입니다';
     document.getElementById('v-why').textContent='';
     var cb=document.getElementById('clr-badge'); if(cb){cb.textContent='';cb.className='clr-badge';}
-    var rm=document.getElementById('r-mood'); if(rm){rm.textContent='–';rm.className='big';}
-    var rms=document.getElementById('r-mood-sub'); if(rms) rms.textContent='';
+    var rm=document.getElementById('r-mood'); if(rm){rm.textContent='측정중';rm.className='big';}
+    var rms=document.getElementById('r-mood-sub'); if(rms) rms.textContent='표정 누적 대기';
+    setMoodFace(null,null,false,true,false);
     var rt=document.getElementById('r-time'); if(rt) rt.textContent='–';
     var rts=document.getElementById('r-time-sub'); if(rts) rts.textContent='';
   }
@@ -674,6 +726,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     var cb=document.getElementById('clr-badge'); if(cb){cb.textContent='자리비움';cb.className='clr-badge clr-wait';}
     var rm=document.getElementById('r-mood'); if(rm){rm.textContent='자리비움';rm.className='big';}
     var rms=document.getElementById('r-mood-sub'); if(rms) rms.textContent='카메라 얼굴 인식 대기';
+    setMoodFace(null,null,false,false,true);
     var rt=document.getElementById('r-time'); if(rt) rt.textContent='대기';
     var rts=document.getElementById('r-time-sub'); if(rts) rts.textContent='얼굴 인식 후 재개';
   }
@@ -748,6 +801,7 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
     else moodSub='표정·음성 종합';
     var rm=document.getElementById('r-mood'); rm.textContent=moodTxt; rm.className='big '+moodCls;
     document.getElementById('r-mood-sub').textContent=moodSub;
+    setMoodFace(ctx.emo, ctx.signal, ctx.mismatch, false, false);
 
     var tBig,tSub;
     if(ctx.signal==='red'){tBig='잠시 뒤';tSub='기분 풀린 후';}
@@ -1136,22 +1190,64 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
   });
   pollOutlookStatus();
   setInterval(pollOutlookStatus, 60000);  // 1분마다 상태 갱신
-  /* ───────── 상세 원인 분석 탭 ───────── */
-  function analyzeWindow(k,rd,th){
-    var steps=[], fired=0;
-    if(rd.sigh){steps.push({t:'① 한숨',d:'구간 내 한숨 1회 이상',res:'🔴 빨강 (최우선)',on:true});fired=1;}
-    else steps.push({t:'① 한숨',d:'감지 없음',res:'다음 단계 ↓',on:false});
-    if(!fired){
-      if(rd.expr==='분노'){steps.push({t:'② 표정 대표값',d:'분노',res:'🔴 빨강',on:true});fired=2;}
-      else if(rd.expr==='행복'){steps.push({t:'② 표정 대표값',d:'행복',res:'🟢 초록',on:true});fired=2;}
-      else steps.push({t:'② 표정 대표값',d:(rd.expr||'일반')+' (보통)',res:'다음 단계 ↓',on:false});
-    }else steps.push({t:'② 표정 대표값',d:(rd.expr||'-'),res:'평가 안 함',on:false});
-    if(!fired){
-      if(rd.neg_count>=th){steps.push({t:'③ 발화 부정',d:rd.neg_count+'개 ≥ 임계 '+th+'개',res:'🔴 빨강',on:true});fired=3;}
-      else steps.push({t:'③ 발화 부정',d:rd.neg_count+'개 < 임계 '+th+'개',res:'다음 단계 ↓',on:false});
-    }else steps.push({t:'③ 발화 부정',d:rd.neg_count+'개',res:'평가 안 함',on:false});
-    if(!fired)steps.push({t:'④ 기본값',d:'위 조건 모두 불충족',res:'🟢 초록',on:true});
-    return steps;
+  /* ───────── 상세 원인 분석 탭 (위험점수 R 기반) ───────── */
+  var ANZ_DEF_TH={red_th:0.5,green_th:-0.3,anger_hard_th:0.6,w_face:0.6,w_speech:0.4};
+  function _pct(v){return ((Math.max(-1,Math.min(1,v))+1)/2)*100;}
+  function _fx(v){return (v>=0?'+':'')+Number(v).toFixed(2);}
+  function windowFace(rd){
+    if(rd.reason==='anger_hard'||rd.reason==='sigh'||rd.signal==='red'||rd.expr==='분노') return '😠';
+    if(rd.expr==='행복') return '😄';
+    if(rd.signal==='yellow') return '😐';
+    return '🙂';
+  }
+  function gaugeHTML(r,th,override,face,sigColor){
+    var gp=_pct(th.green_th), rp=_pct(th.red_th), mp=_pct(r);
+    var bp=Math.max(8,Math.min(92,mp));   // 부표가 카드 밖으로 안 나가게 클램프
+    var col=sigColor||'var(--tx)';
+    var head='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">'
+      +'<span style="font-size:.74rem;color:var(--tx2)">위험점수 R</span>'
+      +'<span style="font-weight:800;font-size:.95rem">'+_fx(r)
+      +(override?' <span style="font-size:.66rem;color:var(--red);font-weight:700;margin-left:4px">🚩 오버라이드 빨강 확정</span>':'')
+      +'</span></div>';
+    var buoy='<div style="position:absolute;left:'+bp+'%;top:-50px;transform:translateX(-50%);z-index:3;'
+      +'display:inline-flex;align-items:center;gap:5px;white-space:nowrap;'
+      +'background:'+col+';color:#0d1117;font-size:1.1rem;font-weight:800;'
+      +'padding:5px 13px;border-radius:999px;box-shadow:0 4px 10px rgba(0,0,0,.45);'
+      +'animation:gbuoybob 2s ease-in-out infinite">'
+      +'<span style="font-size:1.25rem">'+(face||'🙂')+'</span> 현재 상태'
+      +'<span style="position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);width:0;height:0;'
+        +'border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid '+col+'"></span>'
+      +'</div>';
+    var bar='<div style="position:relative;height:22px;border-radius:6px;overflow:hidden;border:1px solid var(--line)">'
+      +'<div style="position:absolute;left:0;top:0;bottom:0;width:'+gp+'%;background:rgba(52,199,89,.30)"></div>'
+      +'<div style="position:absolute;left:'+gp+'%;top:0;bottom:0;width:'+(rp-gp)+'%;background:rgba(255,149,0,.30)"></div>'
+      +'<div style="position:absolute;left:'+rp+'%;top:0;bottom:0;right:0;background:rgba(255,59,48,.30)"></div>'
+      +'<div style="position:absolute;left:'+mp+'%;top:0;bottom:0;width:2px;background:var(--tx);transform:translateX(-1px)"></div>'
+      +'</div>';
+    var gaugewrap='<div style="position:relative;overflow:visible;margin-top:60px">'+buoy+bar+'</div>';
+    var ticks='<div style="position:relative;height:14px;font-size:.62rem;color:var(--tx3);margin-top:1px">'
+      +'<span style="position:absolute;left:0">-1</span>'
+      +'<span style="position:absolute;left:'+gp+'%;transform:translateX(-50%);color:var(--green)">'+th.green_th+'</span>'
+      +'<span style="position:absolute;left:'+rp+'%;transform:translateX(-50%);color:var(--red)">'+th.red_th+'</span>'
+      +'<span style="position:absolute;right:0">+1</span></div>';
+    return head+gaugewrap+ticks;
+  }
+  function contribHTML(label,c){
+    var w=Math.min(50,Math.abs(c)*50);
+    var side=c>=0?'left:50%':'right:50%';
+    var bg=c>=0?'var(--red)':'var(--green)';
+    return '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:.74rem">'
+      +'<span style="flex:0 0 78px;color:var(--tx2)">'+label+'</span>'
+      +'<div style="flex:1;position:relative;height:12px;background:var(--panel);border:1px solid var(--line2);border-radius:4px">'
+      +'<div style="position:absolute;top:0;bottom:0;left:50%;width:1px;background:var(--tx3)"></div>'
+      +'<div style="position:absolute;top:0;bottom:0;'+side+';width:'+w+'%;background:'+bg+';opacity:.55"></div>'
+      +'</div>'
+      +'<span style="flex:0 0 50px;text-align:right;font-weight:700">'+_fx(c)+'</span></div>';
+  }
+  function reasonLine(rd,th){
+    if(rd.reason==='sigh')       return {ico:'💨',txt:'한숨 감지 → 빨강 (하드 오버라이드)',ov:true};
+    if(rd.reason==='anger_hard') return {ico:'😡',txt:'강한 분노 표정 (분노비율 ≥ '+th.anger_hard_th+') → 빨강 (하드 오버라이드)',ov:true};
+    return {ico:'🧮',txt:'위험점수 R 기반 판정',ov:false};
   }
   function renderAnalysis(){
     var box=document.getElementById('anz-cards'); if(!box)return;
@@ -1159,8 +1255,9 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
       if(d.error){box.innerHTML='<div class="empty">radar 미연결</div>';return;}
       var up=document.getElementById('anz-updated');
       if(up&&d.updated_at)up.textContent='업데이트 '+d.updated_at.substring(11,19);
-      var th={'1m':1,'5m':2,'10m':3}, lbl={'1m':'최근 1분','5m':'최근 5분','10m':'최근 10분'};
-      var sigKo={red:'🔴 빨강',yellow:'🟢 초록',green:'🟢 초록'};
+      var th=d.thresholds||ANZ_DEF_TH, Wf=th.w_face, Ws=th.w_speech;
+      var lbl={'1m':'최근 1분','5m':'최근 5분','10m':'최근 10분'};
+      var sigKo={red:'🔴 빨강',yellow:'🟡 노랑',green:'🟢 초록'};
       var html='';
       ['1m','5m','10m'].forEach(function(k){
         var rd=d[k]; if(!rd)return;
@@ -1171,11 +1268,20 @@ body[data-signal="orange"] #goBtn{animation:gobreath_o 3.4s ease-in-out infinite
         if(notReady){
           html+='<div style="font-size:.78rem;color:var(--tx2)">구간이 아직 충분히 누적되지 않았습니다 (표정 '+dp.expression+'개).</div>';
         }else{
-          analyzeWindow(k,rd,th[k]).forEach(function(s){
-            var c=s.on?'var(--tx)':'var(--tx3)';
-            html+='<div style="display:flex;gap:8px;padding:5px 0;border-top:1px solid var(--line2);font-size:.8rem"><span style="flex:0 0 120px;color:'+c+';font-weight:'+(s.on?'700':'400')+'">'+s.t+'</span><span style="flex:1;color:var(--tx2)">'+s.d+'</span><span style="flex:0 0 auto;font-weight:'+(s.on?'700':'400')+'">'+s.res+'</span></div>';
-          });
-          html+='<div style="font-size:.72rem;color:var(--tx3);margin-top:8px">샘플 — 표정 '+dp.expression+' · 한숨 '+dp.sigh+' · 발화 '+dp.speech+'</div>';
+          var rl=reasonLine(rd,th);
+          html+='<div style="font-size:.8rem;margin-bottom:10px">'+rl.ico+' <span style="color:var(--tx)">'+rl.txt+'</span></div>';
+          var SIGCOL={red:'var(--red)',yellow:'var(--orange)',green:'var(--green)'};
+          html+=gaugeHTML(rd.risk||0,th,rl.ov, windowFace(rd), SIGCOL[rd.signal]||'var(--tx2)');
+          var M=dp.speech||0;
+          var wf=(M>0&&(Wf+Ws)>0)?Wf/(Wf+Ws):1, ws=(M>0&&(Wf+Ws)>0)?Ws/(Wf+Ws):0;
+          html+='<div style="margin-top:11px">';
+          html+=contribHTML('표정 기여', wf*(rd.face_risk||0));
+          if(M>0) html+=contribHTML('발화 기여', ws*(rd.speech_risk||0));
+          else    html+='<div style="font-size:.72rem;color:var(--tx3);margin-top:6px">발화 없음 → 표정 100% 반영</div>';
+          html+='</div>';
+          html+='<div style="font-size:.72rem;color:var(--tx3);margin-top:10px;border-top:1px solid var(--line2);padding-top:7px">'
+            +'발화 위험 평균 '+(rd.speech_risk!=null?_fx(rd.speech_risk):'-')+' · 발화 '+M+'건'
+            +' &nbsp;|&nbsp; 표정 '+dp.expression+' · 한숨 '+dp.sigh+'</div>';
         }
         html+='</div>';
       });

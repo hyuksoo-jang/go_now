@@ -522,15 +522,19 @@ def speech_process_loop(utter_q, stop_evt, whisper_size, threads, min_chars,
         text = "".join(seg.text for seg in segments).strip()
         if len(text) < min_chars:
             continue
-
+        
         res = clf.predict(text)
         emo = res["top"]
-        ok = _post("/api/radar/add-speech-emotion",
-                   {"emotion": emo, "timestamp": time.time()}, kind="speech")
+        payload = {
+            "emotion": emo,
+            "top_prob": round(res["top_prob"], 4),
+            "probs": {k: round(v, 4) for k, v in res["probs"].items()},
+            "timestamp": time.time(),
+        }
+        ok = _post("/api/radar/add-speech-emotion", payload, kind="speech")
         polarity = "긍정" if emo == "기쁨" else "부정"
         print(f'[speech] 🗣 "{text}" → {emo} ({res["top_prob"]*100:.0f}%, {polarity}) '
               f"→ {'OK' if ok else 'FAIL'}", flush=True)
-
 
 # ═════════════════════════════════════════════════════════════
 # 재캘리브레이션 폴러 (대시보드 버튼 → go_now 플래그 → 여기서 감지)
