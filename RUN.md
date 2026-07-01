@@ -41,6 +41,7 @@
 python3 -m venv .venv && source .venv/bin/activate
 
 # 역할에 맞게 택1 — 실행권한 이슈를 피하려 bash로 호출
+# flite-runtime 실패 시 tensorflow 폴백: 한 번 테스트해서 폴백 확인됨
 bash setup.sh all        # 단일 기기에서 cam+mic 모두
 bash setup.sh cam        # cam 기기만
 bash setup.sh mic        # mic 기기만

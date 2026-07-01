@@ -2,7 +2,7 @@
 # 결재 레이더 — cam 기기 의존성
 #   go_now_v2.py + radar_signal_processor.py + dashboard.html
 # ──────────────────────────────────────────────────────────────
-numpy>=1.24,<2.0
+numpy>=1.24
 opencv-python>=4.8            # 서버용이면 opencv-python-headless 로 바꿔도 됨
 mediapipe>=0.10.9            # 0.10.9+ : protobuf 4.x 호환 (FieldDescriptor.label 오류 해결)
 flask>=3.0
