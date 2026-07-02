@@ -2,7 +2,7 @@
 # 결재 레이더 — mic 기기 의존성
 #   mic_agent.py : 한숨(YAMNet TFLite) + 발화(STT faster-whisper / KoBERT)
 # ──────────────────────────────────────────────────────────────
-numpy>=1.24,<2.0
+numpy>=1.24
 sounddevice>=0.4.6           # PortAudio 기반 (apt: libportaudio2 필요)
 webrtcvad>=2.0.10
 
